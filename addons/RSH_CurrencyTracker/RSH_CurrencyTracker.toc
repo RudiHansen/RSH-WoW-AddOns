@@ -1,9 +1,8 @@
 ## Interface: 120007
 ## Title: RSH - Currency Tracker
-## Notes: Tracks selected currencies and stores their history
+## Notes: Tracks all character currencies and stores their history
 ## Author: Rudi
-## Version: 1.0.0
+## Version: 2.0.0
 ## SavedVariables: CurrencyTrackerDB
 
-CurrencyDefinitions.lua
 RSH_CurrencyTracker.lua
