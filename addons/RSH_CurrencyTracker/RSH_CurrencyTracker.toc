@@ -5,4 +5,5 @@
 ## Version: 1.0.0
 ## SavedVariables: CurrencyTrackerDB
 
+CurrencyDefinitions.lua
 RSH_CurrencyTracker.lua
