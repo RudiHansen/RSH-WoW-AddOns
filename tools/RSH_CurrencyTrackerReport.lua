@@ -1,7 +1,7 @@
 #!/usr/bin/env lua5.4
 
--- CurrencyLoginLog report
--- Reads the SavedVariables file created by the CurrencyLoginLog WoW addon
+-- RSH Currency Tracker report
+-- Reads the SavedVariables file created by the RSH Currency Tracker WoW addon
 -- and prints the collected snapshots as a terminal table.
 
 local HOME = os.getenv("HOME") or "."
@@ -35,7 +35,7 @@ If no file is supplied, this file is used:
 end
 
 local function fail(message)
-    io.stderr:write("CurrencyLoginLog report: " .. message .. "\n")
+    io.stderr:write("RSH Currency Tracker report: " .. message .. "\n")
     os.exit(1)
 end
 
