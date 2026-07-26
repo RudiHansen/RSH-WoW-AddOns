@@ -26,7 +26,8 @@ Usage:
 Options:
   --latest              Show only the newest snapshot for each character
   --character NAME      Show only snapshots for the named character
-  --oldest-first        Sort oldest snapshots first (default: newest first)
+  --oldest-first        Sort oldest snapshots first (this is the default)
+  --newest-first        Sort newest snapshots first
   -h, --help            Show this help
 
 If no file is supplied, this file is used:
@@ -43,7 +44,7 @@ local function parse_arguments(arguments)
         file = DEFAULT_FILE,
         latest = false,
         character = nil,
-        oldest_first = false,
+        oldest_first = true,
     }
 
     local file_was_set = false
@@ -59,6 +60,8 @@ local function parse_arguments(arguments)
             options.latest = true
         elseif argument == "--oldest-first" then
             options.oldest_first = true
+        elseif argument == "--newest-first" then
+            options.oldest_first = false
         elseif argument == "--character" then
             index = index + 1
             if not arguments[index] then
@@ -182,28 +185,73 @@ end
 
 local function currency_quantity(entry, currency_name)
     if type(entry.currencies) ~= "table" then
-        return "-"
+        return nil
     end
 
     local value = entry.currencies[currency_name]
 
     if type(value) == "number" then
-        return tostring(value)
+        return value
     end
 
-    if type(value) ~= "table" then
+    if type(value) ~= "table" or value.unavailable then
+        return nil
+    end
+
+    return tonumber(value.quantity)
+end
+
+local function entry_key(entry)
+    return tostring(entry.character or "Unknown")
+        .. "-"
+        .. tostring(entry.realm or "Unknown")
+end
+
+local function calculate_changes(entries)
+    local chronological = {}
+    for index, entry in ipairs(entries) do
+        chronological[index] = entry
+    end
+    sort_entries(chronological, true)
+
+    local previous_by_character = {}
+    local changes = {}
+
+    for _, entry in ipairs(chronological) do
+        local key = entry_key(entry)
+        local previous = previous_by_character[key]
+        local entry_changes = {}
+
+        if previous then
+            for _, currency in ipairs(CURRENCIES) do
+                local current_quantity = currency_quantity(entry, currency.name)
+                local previous_quantity = currency_quantity(previous, currency.name)
+
+                if current_quantity ~= nil and previous_quantity ~= nil then
+                    entry_changes[currency.name] = current_quantity - previous_quantity
+                end
+            end
+        end
+
+        changes[entry] = entry_changes
+        previous_by_character[key] = entry
+    end
+
+    return changes
+end
+
+local function currency_display(entry, currency_name, changes)
+    local quantity = currency_quantity(entry, currency_name)
+    if quantity == nil then
         return "-"
     end
 
-    if value.unavailable then
-        return "-"
+    local delta = changes[entry] and changes[entry][currency_name]
+    if delta and delta ~= 0 then
+        return string.format("%d (%+d)", quantity, delta)
     end
 
-    if value.quantity == nil then
-        return "-"
-    end
-
-    return tostring(value.quantity)
+    return tostring(quantity)
 end
 
 local function formatted_date(timestamp)
@@ -222,7 +270,7 @@ local function formatted_time(timestamp)
     return os.date("%H:%M:%S", timestamp)
 end
 
-local function make_rows(entries)
+local function make_rows(entries, changes)
     local rows = {}
 
     for _, entry in ipairs(entries) do
@@ -235,7 +283,7 @@ local function make_rows(entries)
         }
 
         for _, currency in ipairs(CURRENCIES) do
-            row[#row + 1] = currency_quantity(entry, currency.name)
+            row[#row + 1] = currency_display(entry, currency.name, changes)
         end
 
         rows[#rows + 1] = row
@@ -319,6 +367,7 @@ end
 local options = parse_arguments(arg)
 local database = load_database(options.file)
 local entries = copy_matching_entries(database.entries, options.character)
+local changes = calculate_changes(entries)
 
 if options.latest then
     entries = keep_latest_per_character(entries)
@@ -333,5 +382,5 @@ if #entries == 0 then
     fail("no snapshots were found")
 end
 
-print_table(make_rows(entries))
+print_table(make_rows(entries, changes))
 print(string.format("\n%d snapshot(s) from %s", #entries, options.file))
