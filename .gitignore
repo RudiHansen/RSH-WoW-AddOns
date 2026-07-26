@@ -1,0 +1,13 @@
+# Editor
+.vscode/
+.idea/
+
+# Temporary files
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Generated or local data
+*.log
+*.bak
