@@ -7,7 +7,7 @@
 local HOME = os.getenv("HOME") or "."
 local DEFAULT_FILE = HOME
     .. "/Faugus/battlenet/drive_c/Program Files (x86)/World of Warcraft/"
-    .. "_retail_/WTF/Account/RUDIHANSEN2/SavedVariables/CurrencyTracker.lua"
+    .. "_retail_/WTF/Account/RUDIHANSEN2/SavedVariables/RSH_CurrencyTracker.lua"
 
 local CURRENCIES = {
     { name = "Field Accolade",       heading = "Field" },
@@ -21,7 +21,7 @@ local CURRENCIES = {
 local function print_usage()
     print([[
 Usage:
-  lua5.4 currency-login-report.lua [options] [SavedVariables-file]
+  lua5.4 RSH_CurrencyTrackerReport.lua [options] [SavedVariables-file]
 
 Options:
   --latest              Show only the newest snapshot for each character

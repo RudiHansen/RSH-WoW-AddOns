@@ -97,7 +97,7 @@ local function CreateSnapshot()
 
     print(
         string.format(
-            "|cff00ff00CurrencyLoginLog:|r Saved %d currencies for %s-%s.",
+            "|cff00ff00RSH Currency Tracker:|r Saved %d currencies for %s-%s.",
             foundCount,
             characterName or "Unknown",
             realmName or "Unknown"
@@ -119,9 +119,9 @@ eventFrame:SetScript("OnEvent", function(_, event)
     end
 end)
 
-SLASH_CURRENCYLOGINLOG1 = "/currencylog"
+SLASH_RSHCURRENCYTRACKER1 = "/currencylog"
 
-SlashCmdList.CURRENCYLOGINLOG = function()
+SlashCmdList.RSHCURRENCYTRACKER = function()
     snapshotCreated = false
     CreateSnapshot()
 end
