@@ -47,6 +47,59 @@ local function ScanCurrencies()
     return currencies, foundCount
 end
 
+local function FindLatestSnapshot(characterName, realmName)
+    local latestSnapshot
+    local latestTimestamp = 0
+
+    for _, entry in ipairs(CurrencyTrackerDB.entries) do
+        if entry.character == characterName and entry.realm == realmName then
+            local timestamp = tonumber(entry.timestamp) or 0
+
+            if not latestSnapshot or timestamp >= latestTimestamp then
+                latestSnapshot = entry
+                latestTimestamp = timestamp
+            end
+        end
+    end
+
+    return latestSnapshot
+end
+
+local function CurrencyMatches(left, right)
+    return type(left) == "table"
+        and type(right) == "table"
+        and left.currencyID == right.currencyID
+        and left.name == right.name
+        and left.quantity == right.quantity
+        and left.quantityEarnedThisWeek
+            == right.quantityEarnedThisWeek
+        and left.maxWeeklyQuantity == right.maxWeeklyQuantity
+        and left.maxQuantity == right.maxQuantity
+end
+
+local function CurrenciesMatch(left, right)
+    if type(left) ~= "table" or type(right) ~= "table" then
+        return false
+    end
+
+    local leftCount = 0
+    local rightCount = 0
+
+    for currencyID, currency in pairs(left) do
+        leftCount = leftCount + 1
+
+        if not CurrencyMatches(currency, right[currencyID]) then
+            return false
+        end
+    end
+
+    for _ in pairs(right) do
+        rightCount = rightCount + 1
+    end
+
+    return leftCount == rightCount
+end
+
 local function CreateSnapshot()
     if snapshotCreated then
         return
@@ -58,6 +111,24 @@ local function CreateSnapshot()
     local realmName = GetRealmName()
     local _, className = UnitClass("player")
     local currencies, foundCount = ScanCurrencies()
+    local latestSnapshot =
+        FindLatestSnapshot(characterName, realmName)
+
+    snapshotCreated = true
+
+    if latestSnapshot
+        and CurrenciesMatch(currencies, latestSnapshot.currencies)
+    then
+        print(
+            string.format(
+                "|cffffcc00RSH Currency Tracker:|r "
+                    .. "No currency changes for %s-%s.",
+                characterName or "Unknown",
+                realmName or "Unknown"
+            )
+        )
+        return
+    end
 
     local snapshot = {
         timestamp = GetServerTime(),
@@ -68,7 +139,6 @@ local function CreateSnapshot()
     }
 
     table.insert(CurrencyTrackerDB.entries, snapshot)
-    snapshotCreated = true
 
     print(
         string.format(
