@@ -26,8 +26,8 @@ Usage:
 Options:
   --latest              Show only the newest snapshot for each character
   --character NAME      Show only snapshots for the named character
-  --oldest-first        Sort oldest snapshots first (this is the default)
-  --newest-first        Sort newest snapshots first
+  --oldest-first        Sort each character's snapshots oldest first (default)
+  --newest-first        Sort each character's snapshots newest first
   -h, --help            Show this help
 
 If no file is supplied, this file is used:
@@ -144,20 +144,33 @@ end
 
 local function sort_entries(entries, oldest_first)
     table.sort(entries, function(left, right)
-        local left_time = timestamp_of(left)
-        local right_time = timestamp_of(right)
+        local left_name = tostring(left.character or "Unknown"):lower()
+        local right_name = tostring(right.character or "Unknown"):lower()
 
-        if left_time == right_time then
-            local left_name = tostring(left.character or "")
-            local right_name = tostring(right.character or "")
+        if left_name ~= right_name then
             return left_name < right_name
         end
 
-        if oldest_first then
-            return left_time < right_time
+        local left_realm = tostring(left.realm or "Unknown"):lower()
+        local right_realm = tostring(right.realm or "Unknown"):lower()
+
+        if left_realm ~= right_realm then
+            return left_realm < right_realm
         end
 
-        return left_time > right_time
+        local left_time = timestamp_of(left)
+        local right_time = timestamp_of(right)
+
+        if left_time ~= right_time then
+            if oldest_first then
+                return left_time < right_time
+            end
+
+            return left_time > right_time
+        end
+
+        -- Stable-looking fallback when two snapshots have the same timestamp.
+        return tostring(left.character or "") < tostring(right.character or "")
     end)
 end
 
@@ -359,8 +372,17 @@ local function print_table(rows)
     end
     print(table.concat(separator, "  "))
 
+    local previous_character_key = nil
+
     for _, row in ipairs(rows) do
+        local character_key = tostring(row[3]) .. "\0" .. tostring(row[4])
+
+        if previous_character_key and character_key ~= previous_character_key then
+            print()
+        end
+
         print(render_row(row))
+        previous_character_key = character_key
     end
 end
 
