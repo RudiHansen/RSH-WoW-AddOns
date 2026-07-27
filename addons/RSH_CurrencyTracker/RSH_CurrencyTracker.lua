@@ -156,11 +156,15 @@ local function ScheduleSnapshot()
 end
 
 eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("PLAYER_LOGOUT")
 
 eventFrame:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_LOGIN" then
         InitialiseDatabase()
         ScheduleSnapshot()
+    elseif event == "PLAYER_LOGOUT" then
+        snapshotCreated = false
+        CreateSnapshot()
     end
 end)
 
