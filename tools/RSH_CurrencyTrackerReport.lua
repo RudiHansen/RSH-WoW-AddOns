@@ -10,12 +10,12 @@ local DEFAULT_FILE = HOME
     .. "_retail_/WTF/Account/RUDIHANSEN2/SavedVariables/RSH_CurrencyTracker.lua"
 
 local CURRENCIES = {
-    { name = "Field Accolade",       heading = "Field" },
-    { name = "Adventurer Dawncrest", heading = "Adventurer" },
-    { name = "Veteran Dawncrest",    heading = "Veteran" },
-    { name = "Champion Dawncrest",   heading = "Champion" },
-    { name = "Hero Dawncrest",       heading = "Hero" },
-    { name = "Myth Dawncrest",       heading = "Myth" },
+    { id = 3405, name = "Field Accolade",       heading = "Field" },
+    { id = 3383, name = "Adventurer Dawncrest", heading = "Adventurer" },
+    { id = 3341, name = "Veteran Dawncrest",    heading = "Veteran" },
+    { id = 3343, name = "Champion Dawncrest",   heading = "Champion" },
+    { id = 3345, name = "Hero Dawncrest",       heading = "Hero" },
+    { id = 3347, name = "Myth Dawncrest",       heading = "Myth" },
 }
 
 local function print_usage()
@@ -196,12 +196,27 @@ local function keep_latest_per_character(entries)
     return result
 end
 
-local function currency_quantity(entry, currency_name)
+local function currency_quantity(entry, currency)
     if type(entry.currencies) ~= "table" then
         return nil
     end
 
-    local value = entry.currencies[currency_name]
+    local value = entry.currencies[currency.id]
+        or entry.currencies[tostring(currency.id)]
+        or entry.currencies[currency.name]
+
+    -- Older or manually converted databases may use another table key while
+    -- retaining the currency name in the value.
+    if value == nil then
+        for _, candidate in pairs(entry.currencies) do
+            if type(candidate) == "table"
+                and candidate.name == currency.name
+            then
+                value = candidate
+                break
+            end
+        end
+    end
 
     if type(value) == "number" then
         return value
@@ -237,8 +252,8 @@ local function calculate_changes(entries)
 
         if previous then
             for _, currency in ipairs(CURRENCIES) do
-                local current_quantity = currency_quantity(entry, currency.name)
-                local previous_quantity = currency_quantity(previous, currency.name)
+                local current_quantity = currency_quantity(entry, currency)
+                local previous_quantity = currency_quantity(previous, currency)
 
                 if current_quantity ~= nil and previous_quantity ~= nil then
                     entry_changes[currency.name] = current_quantity - previous_quantity
@@ -253,13 +268,13 @@ local function calculate_changes(entries)
     return changes
 end
 
-local function currency_display(entry, currency_name, changes)
-    local quantity = currency_quantity(entry, currency_name)
+local function currency_display(entry, currency, changes)
+    local quantity = currency_quantity(entry, currency)
     if quantity == nil then
         return "-"
     end
 
-    local delta = changes[entry] and changes[entry][currency_name]
+    local delta = changes[entry] and changes[entry][currency.name]
     if delta and delta ~= 0 then
         return string.format("%d (%+d)", quantity, delta)
     end
@@ -296,7 +311,7 @@ local function make_rows(entries, changes)
         }
 
         for _, currency in ipairs(CURRENCIES) do
-            row[#row + 1] = currency_display(entry, currency.name, changes)
+            row[#row + 1] = currency_display(entry, currency, changes)
         end
 
         rows[#rows + 1] = row
