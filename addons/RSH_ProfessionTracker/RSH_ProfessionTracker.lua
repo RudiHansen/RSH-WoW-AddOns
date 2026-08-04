@@ -909,6 +909,10 @@ local function ScheduleCurrentProfessionScan()
 end
 
 eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("PLAYER_LOGOUT")
+eventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
+eventFrame:RegisterEvent("BANKFRAME_CLOSED")
 eventFrame:RegisterEvent("TRADE_SKILL_SHOW")
 eventFrame:RegisterEvent("SKILL_LINE_SPECS_RANKS_CHANGED")
 eventFrame:RegisterEvent("SKILL_LINE_SPECS_UNLOCKED")
@@ -924,7 +928,18 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         end
     elseif event == "TRADE_SKILL_SHOW" then
         ScheduleCurrentProfessionScan()
-    else
+    elseif event == "PLAYER_LOGIN" then
+        -- Bag contents may not be fully available during initial addon loading.
+        C_Timer.After(2, SaveCharacterResources)
+    elseif event == "BAG_UPDATE_DELAYED"
+        or event == "BANKFRAME_CLOSED"
+        or event == "PLAYER_LOGOUT"
+    then
+        SaveCharacterResources()
+    elseif event == "SKILL_LINE_SPECS_RANKS_CHANGED"
+        or event == "SKILL_LINE_SPECS_UNLOCKED"
+        or event == "PLAYER_EQUIPMENT_CHANGED"
+    then
         C_Timer.After(0, ScanCurrentProfession)
     end
 end)

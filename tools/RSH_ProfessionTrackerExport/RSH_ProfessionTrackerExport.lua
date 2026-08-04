@@ -339,12 +339,18 @@ local function sorted_professions(professions)
 end
 
 local function build_export(character, realm)
+    local fused_vitality = character.fusedVitality
+
+    if fused_vitality == nil then
+        fused_vitality = "Unknown"
+    end
+
     local lines = {
         "Character: " .. tostring(character.character or "Unknown"),
         "Realm: " .. tostring(character.realm or realm or "Unknown"),
         "Resources collected: "
             .. format_timestamp(character.resourcesCollectedAt),
-        "Fused Vitality: " .. tostring(character.fusedVitality or 0),
+        "Fused Vitality: " .. tostring(fused_vitality),
         "",
     }
     local profession_count = 0
