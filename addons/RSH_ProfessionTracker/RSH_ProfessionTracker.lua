@@ -910,7 +910,6 @@ end
 
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
-eventFrame:RegisterEvent("PLAYER_LOGOUT")
 eventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
 eventFrame:RegisterEvent("BANKFRAME_CLOSED")
 eventFrame:RegisterEvent("TRADE_SKILL_SHOW")
@@ -933,7 +932,6 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
         C_Timer.After(2, SaveCharacterResources)
     elseif event == "BAG_UPDATE_DELAYED"
         or event == "BANKFRAME_CLOSED"
-        or event == "PLAYER_LOGOUT"
     then
         SaveCharacterResources()
     elseif event == "SKILL_LINE_SPECS_RANKS_CHANGED"
