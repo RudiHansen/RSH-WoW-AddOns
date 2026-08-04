@@ -4,6 +4,73 @@ local professionSnapshots = {}
 local professionMidnightStatus = {}
 local exportWindow
 local FUSED_VITALITY_ITEM_ID = 245345
+local DATABASE_VERSION = 1
+
+local function InitialiseDatabase()
+    RSHProfessionTrackerDB = RSHProfessionTrackerDB or {}
+    RSHProfessionTrackerDB.version = DATABASE_VERSION
+    RSHProfessionTrackerDB.characters =
+        RSHProfessionTrackerDB.characters or {}
+end
+
+local function GetCharacterRecord()
+    InitialiseDatabase()
+
+    local realmName = GetRealmName() or "Unknown"
+    local characterName = UnitName("player") or "Unknown"
+    local realmCharacters = RSHProfessionTrackerDB.characters[realmName]
+
+    if not realmCharacters then
+        realmCharacters = {}
+        RSHProfessionTrackerDB.characters[realmName] = realmCharacters
+    end
+
+    local characterRecord = realmCharacters[characterName]
+
+    if not characterRecord then
+        characterRecord = {
+            character = characterName,
+            realm = realmName,
+            professions = {},
+            midnightStatus = {},
+        }
+        realmCharacters[characterName] = characterRecord
+    end
+
+    characterRecord.professions = characterRecord.professions or {}
+    characterRecord.midnightStatus = characterRecord.midnightStatus or {}
+
+    return characterRecord
+end
+
+local function LoadCharacterData()
+    local characterRecord = GetCharacterRecord()
+    professionSnapshots = characterRecord.professions
+    professionMidnightStatus = characterRecord.midnightStatus
+end
+
+local function SaveCharacterResources()
+    local characterRecord = GetCharacterRecord()
+    characterRecord.fusedVitality = C_Item.GetItemCount(
+        FUSED_VITALITY_ITEM_ID,
+        true,
+        false,
+        true,
+        false
+    )
+    characterRecord.resourcesCollectedAt = GetServerTime()
+
+    return characterRecord.fusedVitality,
+        characterRecord.resourcesCollectedAt
+end
+
+local function FormatTimestamp(timestamp)
+    if not timestamp then
+        return "Unknown"
+    end
+
+    return date("%Y-%m-%d %H:%M:%S", timestamp)
+end
 
 local function PrintMessage(message)
     print("|cff00ff00RSH Profession Tracker:|r " .. message)
@@ -530,6 +597,9 @@ local function ScanCurrentProfession()
         then
             professionMidnightStatus[baseProfessionInfo.profession] = false
             professionSnapshots[baseProfessionInfo.profession] = nil
+            local characterRecord = GetCharacterRecord()
+            characterRecord.midnightStatus = professionMidnightStatus
+            characterRecord.professions = professionSnapshots
         end
 
         return false
@@ -553,6 +623,7 @@ local function ScanCurrentProfession()
         return false
     end
 
+    local collectedAt = GetServerTime()
     professionSnapshots[professionInfo.profession] = {
         profession = professionInfo.profession,
         professionID = professionInfo.professionID,
@@ -564,7 +635,13 @@ local function ScanCurrentProfession()
         equipment = ScanEquipment(professionInfo.profession),
         specializations = specializations,
         craftableGear = craftableGear,
+        collectedAt = collectedAt,
     }
+
+    local characterRecord = GetCharacterRecord()
+    characterRecord.professions = professionSnapshots
+    characterRecord.midnightStatus = professionMidnightStatus
+    characterRecord.lastProfessionCollectedAt = collectedAt
 
     return true
 end
@@ -651,6 +728,7 @@ local function BuildProfessionLines(lines, snapshot)
     local displayName = snapshot.professionName
 
     table.insert(lines, "Profession: " .. displayName)
+    table.insert(lines, "Collected: " .. FormatTimestamp(snapshot.collectedAt))
     table.insert(
         lines,
         string.format("Skill: %d/%d", snapshot.skillLevel, snapshot.maxSkillLevel)
@@ -751,23 +829,15 @@ end
 local function ExportProfessions()
     ScanCurrentProfession()
 
-    for _, snapshot in pairs(professionSnapshots) do
-        snapshot.equipment = ScanEquipment(snapshot.profession)
-    end
+    local fusedVitality, resourcesCollectedAt = SaveCharacterResources()
 
     local primaryProfessions = GetPrimaryProfessions()
     local missingProfessions = {}
     local lines = {
         "Character: " .. (UnitName("player") or "Unknown"),
         "Realm: " .. (GetRealmName() or "Unknown"),
-        "Fused Vitality: "
-            .. C_Item.GetItemCount(
-                FUSED_VITALITY_ITEM_ID,
-                true,
-                false,
-                true,
-                false
-            ),
+        "Resources collected: " .. FormatTimestamp(resourcesCollectedAt),
+        "Fused Vitality: " .. fusedVitality,
         "",
     }
     local exportedCount = 0
@@ -838,13 +908,21 @@ local function ScheduleCurrentProfessionScan()
     end)
 end
 
+eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("TRADE_SKILL_SHOW")
 eventFrame:RegisterEvent("SKILL_LINE_SPECS_RANKS_CHANGED")
 eventFrame:RegisterEvent("SKILL_LINE_SPECS_UNLOCKED")
 eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 
-eventFrame:SetScript("OnEvent", function(_, event)
-    if event == "TRADE_SKILL_SHOW" then
+eventFrame:SetScript("OnEvent", function(_, event, ...)
+    if event == "ADDON_LOADED" then
+        local loadedAddonName = ...
+
+        if loadedAddonName == addonName then
+            LoadCharacterData()
+            eventFrame:UnregisterEvent("ADDON_LOADED")
+        end
+    elseif event == "TRADE_SKILL_SHOW" then
         ScheduleCurrentProfessionScan()
     else
         C_Timer.After(0, ScanCurrentProfession)
