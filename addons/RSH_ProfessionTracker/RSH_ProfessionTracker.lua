@@ -1,6 +1,7 @@
 local addonName = ...
 local eventFrame = CreateFrame("Frame")
 local professionSnapshots = {}
+local professionMidnightStatus = {}
 local exportWindow
 local FUSED_VITALITY_ITEM_ID = 245345
 
@@ -34,20 +35,20 @@ local function GetPrimaryProfessions()
     return professions
 end
 
-local function GetNewestChildProfessionInfo()
+local function GetMidnightChildProfessionInfo()
     local childProfessionInfos = C_TradeSkillUI.GetChildProfessionInfos()
-    local newestInfo
+    local midnightExpansionName =
+        _G["EXPANSION_NAME" .. Enum.ExpansionLevel.Midnight]
 
     for _, professionInfo in ipairs(childProfessionInfos or {}) do
         if professionInfo.isPrimaryProfession
-            and (not newestInfo
-                or professionInfo.sourceCounter > newestInfo.sourceCounter)
+            and professionInfo.expansionName == midnightExpansionName
         then
-            newestInfo = professionInfo
+            return professionInfo
         end
     end
 
-    return newestInfo
+    return nil
 end
 
 local function GetPathName(configID, pathID)
@@ -512,11 +513,29 @@ local function AddEquipmentTotals(lines, equipment)
 end
 
 local function ScanCurrentProfession()
-    local professionInfo = GetNewestChildProfessionInfo()
+    local childProfessionInfos = C_TradeSkillUI.GetChildProfessionInfos()
 
-    if not professionInfo or not professionInfo.profession then
+    if not childProfessionInfos or #childProfessionInfos == 0 then
         return false
     end
+
+    local professionInfo = GetMidnightChildProfessionInfo()
+
+    if not professionInfo or not professionInfo.profession then
+        local baseProfessionInfo = C_TradeSkillUI.GetBaseProfessionInfo()
+
+        if baseProfessionInfo
+            and baseProfessionInfo.isPrimaryProfession
+            and baseProfessionInfo.profession
+        then
+            professionMidnightStatus[baseProfessionInfo.profession] = false
+            professionSnapshots[baseProfessionInfo.profession] = nil
+        end
+
+        return false
+    end
+
+    professionMidnightStatus[professionInfo.profession] = true
 
     local specializations, isComplete =
         ScanSpecializations(professionInfo.professionID)
@@ -764,7 +783,9 @@ local function ExportProfessions()
 
             BuildProfessionLines(lines, snapshot)
             exportedCount = exportedCount + 1
-        else
+        elseif not primaryProfession.profession
+            or professionMidnightStatus[primaryProfession.profession] ~= false
+        then
             table.insert(missingProfessions, primaryProfession.name)
         end
     end
@@ -773,14 +794,14 @@ local function ExportProfessions()
         PrintMessage(
             "Missing specialization data for "
                 .. table.concat(missingProfessions, " and ")
-                .. ". Open each profession window once, then run "
+                .. ". Open each Midnight profession window once, then run "
                 .. "/rshprof export again."
         )
         return
     end
 
     if exportedCount == 0 then
-        PrintMessage("No primary professions were found.")
+        PrintMessage("No Midnight primary professions were found.")
         return
     end
 
@@ -790,7 +811,7 @@ end
 local function ScheduleCurrentProfessionScan()
     C_Timer.After(0.25, function()
         if ScanCurrentProfession() then
-            local professionInfo = GetNewestChildProfessionInfo()
+            local professionInfo = GetMidnightChildProfessionInfo()
 
             if professionInfo then
                 PrintMessage(
@@ -798,6 +819,19 @@ local function ScheduleCurrentProfessionScan()
                         .. (professionInfo.expansionName
                             or professionInfo.professionName)
                         .. "."
+                )
+            end
+        else
+            local baseProfessionInfo = C_TradeSkillUI.GetBaseProfessionInfo()
+
+            if baseProfessionInfo
+                and baseProfessionInfo.profession
+                and professionMidnightStatus[baseProfessionInfo.profession]
+                    == false
+            then
+                PrintMessage(
+                    (baseProfessionInfo.professionName or "This profession")
+                        .. " has no Midnight skill line and will be excluded."
                 )
             end
         end
