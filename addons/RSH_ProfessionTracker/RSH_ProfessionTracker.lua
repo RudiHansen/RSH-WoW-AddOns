@@ -174,11 +174,36 @@ local function ScanSpecializations(professionID)
     return specializations, true
 end
 
+local function GetStatName(statKey)
+    local localizedName = _G[statKey]
+
+    if localizedName and localizedName ~= "" then
+        localizedName = localizedName:gsub("%%[%d%.$%+%-]*[dfs]", "")
+        localizedName = localizedName:gsub("^%s*%+%s*", "")
+        localizedName = localizedName:gsub("%s+", " ")
+        localizedName = strtrim(localizedName)
+
+        if localizedName ~= "" then
+            return localizedName
+        end
+    end
+
+    local name = statKey:gsub("^ITEM_MOD_", ""):gsub("_SHORT$", "")
+    name = name:gsub("_", " "):lower()
+
+    return name:gsub("(%a)([%w']*)", function(firstLetter, remainder)
+        return firstLetter:upper() .. remainder
+    end)
+end
+
 local function GetItemDescription(inventorySlot)
     local itemLink = GetInventoryItemLink("player", inventorySlot)
 
     if not itemLink then
-        return "None"
+        return {
+            description = "None",
+            stats = {},
+        }
     end
 
     local itemName, _, itemQuality = C_Item.GetItemInfo(itemLink)
@@ -195,11 +220,20 @@ local function GetItemDescription(inventorySlot)
         table.insert(parts, qualityName)
     end
 
-    return table.concat(parts, ", ")
+    local stats = C_Item.GetItemStats(itemLink) or {}
+
+    return {
+        description = table.concat(parts, ", "),
+        stats = stats,
+    }
 end
 
 local function ScanEquipment(profession)
-    local equipment = { "None", "None", "None" }
+    local equipment = {
+        { description = "None", stats = {} },
+        { description = "None", stats = {} },
+        { description = "None", stats = {} },
+    }
 
     if profession == nil then
         return equipment
@@ -212,6 +246,68 @@ local function ScanEquipment(profession)
     end
 
     return equipment
+end
+
+local function GetSortedStats(stats)
+    local sortedStats = {}
+
+    for statKey, value in pairs(stats or {}) do
+        if type(value) == "number" and value ~= 0 then
+            table.insert(sortedStats, {
+                key = statKey,
+                name = GetStatName(statKey),
+                value = value,
+            })
+        end
+    end
+
+    table.sort(sortedStats, function(left, right)
+        if left.name == right.name then
+            return left.key < right.key
+        end
+
+        return left.name < right.name
+    end)
+
+    return sortedStats
+end
+
+local function AddEquipmentLine(lines, label, item)
+    table.insert(lines, "  " .. label .. ": " .. item.description)
+
+    for _, stat in ipairs(GetSortedStats(item.stats)) do
+        table.insert(
+            lines,
+            string.format("    %s: %+.0f", stat.name, stat.value)
+        )
+    end
+end
+
+local function AddEquipmentTotals(lines, equipment)
+    local totals = {}
+
+    for _, item in ipairs(equipment) do
+        for statKey, value in pairs(item.stats or {}) do
+            if type(value) == "number" then
+                totals[statKey] = (totals[statKey] or 0) + value
+            end
+        end
+    end
+
+    local sortedTotals = GetSortedStats(totals)
+
+    if #sortedTotals == 0 then
+        return
+    end
+
+    table.insert(lines, "Profession gear totals:")
+
+    for _, stat in ipairs(sortedTotals) do
+        table.insert(
+            lines,
+            string.format("  %s: %+.0f", stat.name, stat.value)
+        )
+    end
 end
 
 local function ScanCurrentProfession()
@@ -276,9 +372,10 @@ local function BuildProfessionLines(lines, snapshot)
         "Available knowledge: " .. snapshot.availableKnowledge
     )
     table.insert(lines, "Gear:")
-    table.insert(lines, "  Tool: " .. snapshot.equipment[1])
-    table.insert(lines, "  Accessory 1: " .. snapshot.equipment[2])
-    table.insert(lines, "  Accessory 2: " .. snapshot.equipment[3])
+    AddEquipmentLine(lines, "Tool", snapshot.equipment[1])
+    AddEquipmentLine(lines, "Accessory 1", snapshot.equipment[2])
+    AddEquipmentLine(lines, "Accessory 2", snapshot.equipment[3])
+    AddEquipmentTotals(lines, snapshot.equipment)
     table.insert(lines, "")
     table.insert(lines, "Specializations:")
 
