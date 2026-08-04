@@ -1,0 +1,454 @@
+local addonName = ...
+local eventFrame = CreateFrame("Frame")
+local professionSnapshots = {}
+local exportWindow
+
+local function PrintMessage(message)
+    print("|cff00ff00RSH Profession Tracker:|r " .. message)
+end
+
+local function GetPrimaryProfessions()
+    local firstProfession, secondProfession = GetProfessions()
+    local professions = {}
+
+    for _, professionIndex in ipairs({ firstProfession, secondProfession }) do
+        if professionIndex then
+            local name, _, _, _, _, _, skillLineID =
+                GetProfessionInfo(professionIndex)
+            local professionInfo
+
+            if skillLineID then
+                professionInfo =
+                    C_TradeSkillUI.GetProfessionInfoBySkillLineID(skillLineID)
+            end
+
+            table.insert(professions, {
+                name = name or "Unknown",
+                skillLineID = skillLineID,
+                profession = professionInfo and professionInfo.profession,
+            })
+        end
+    end
+
+    return professions
+end
+
+local function GetNewestChildProfessionInfo()
+    local childProfessionInfos = C_TradeSkillUI.GetChildProfessionInfos()
+    local newestInfo
+
+    for _, professionInfo in ipairs(childProfessionInfos or {}) do
+        if professionInfo.isPrimaryProfession
+            and (not newestInfo
+                or professionInfo.sourceCounter > newestInfo.sourceCounter)
+        then
+            newestInfo = professionInfo
+        end
+    end
+
+    return newestInfo
+end
+
+local function GetPathName(configID, pathID)
+    local entryID = C_ProfSpecs.GetSpendEntryForPath(pathID)
+    local entryInfo = entryID
+        and C_Traits.GetEntryInfo(configID, entryID)
+    local definitionInfo = entryInfo
+        and entryInfo.definitionID
+        and C_Traits.GetDefinitionInfo(entryInfo.definitionID)
+
+    if definitionInfo then
+        if definitionInfo.overrideName and definitionInfo.overrideName ~= "" then
+            return definitionInfo.overrideName
+        end
+
+        if definitionInfo.spellID then
+            local spellName = C_Spell.GetSpellName(definitionInfo.spellID)
+
+            if spellName then
+                return spellName
+            end
+        end
+    end
+
+    return "Unknown node"
+end
+
+local function GetPathRanks(configID, pathID)
+    local nodeInfo = C_Traits.GetNodeInfo(configID, pathID)
+
+    if not nodeInfo then
+        return nil
+    end
+
+    -- The first rank unlocks the path and is not shown as knowledge in the UI.
+    local unlockEntryID = C_ProfSpecs.GetUnlockEntryForPath(pathID)
+    local unlockEntryInfo = unlockEntryID
+        and C_Traits.GetEntryInfo(configID, unlockEntryID)
+    local unlockRanks = unlockEntryInfo and unlockEntryInfo.maxRanks or 0
+    local currentRank = nodeInfo.currentRank or 0
+
+    if currentRank > 0 then
+        currentRank = currentRank - unlockRanks
+    end
+
+    return math.max(0, currentRank),
+        math.max(0, (nodeInfo.maxRanks or 0) - unlockRanks)
+end
+
+local function ScanPath(configID, pathID, name, visited)
+    if visited[pathID] then
+        return nil
+    end
+
+    visited[pathID] = true
+
+    local currentRank, maxRank = GetPathRanks(configID, pathID)
+
+    if currentRank == nil then
+        return nil
+    end
+
+    local path = {
+        name = name or GetPathName(configID, pathID),
+        currentRank = currentRank,
+        maxRank = maxRank,
+        children = {},
+    }
+    local childIDs = C_ProfSpecs.GetChildrenForPath(pathID)
+
+    for _, childID in ipairs(childIDs or {}) do
+        local child = ScanPath(configID, childID, nil, visited)
+
+        if not child then
+            return nil
+        end
+
+        table.insert(path.children, child)
+    end
+
+    return path
+end
+
+local function ScanSpecializations(professionID)
+    if not C_ProfSpecs.SkillLineHasSpecialization(professionID) then
+        return {}, true
+    end
+
+    local configID = C_ProfSpecs.GetConfigIDForSkillLine(professionID)
+
+    if not configID or configID == 0 then
+        return nil, false
+    end
+
+    local tabIDs = C_ProfSpecs.GetSpecTabIDsForSkillLine(professionID)
+
+    if not tabIDs or #tabIDs == 0 then
+        return nil, false
+    end
+
+    local specializations = {}
+    local visited = {}
+
+    for _, tabID in ipairs(tabIDs) do
+        local tabInfo = C_ProfSpecs.GetTabInfo(tabID)
+
+        if not tabInfo or not tabInfo.rootNodeID then
+            return nil, false
+        end
+
+        local specialization = ScanPath(
+            configID,
+            tabInfo.rootNodeID,
+            tabInfo.name,
+            visited
+        )
+
+        if not specialization then
+            return nil, false
+        end
+
+        table.insert(specializations, specialization)
+    end
+
+    return specializations, true
+end
+
+local function GetItemDescription(inventorySlot)
+    local itemLink = GetInventoryItemLink("player", inventorySlot)
+
+    if not itemLink then
+        return "None"
+    end
+
+    local itemName, _, itemQuality = C_Item.GetItemInfo(itemLink)
+    local itemLevel = C_Item.GetDetailedItemLevelInfo(itemLink)
+    local qualityName = itemQuality
+        and _G["ITEM_QUALITY" .. itemQuality .. "_DESC"]
+    local parts = { itemName or itemLink:match("%[(.-)%]") or "Unknown item" }
+
+    if itemLevel then
+        table.insert(parts, "ilvl " .. itemLevel)
+    end
+
+    if qualityName then
+        table.insert(parts, qualityName)
+    end
+
+    return table.concat(parts, ", ")
+end
+
+local function ScanEquipment(profession)
+    local equipment = { "None", "None", "None" }
+
+    if profession == nil then
+        return equipment
+    end
+
+    local inventorySlots = C_TradeSkillUI.GetProfessionSlots(profession)
+
+    for index = 1, math.min(3, #(inventorySlots or {})) do
+        equipment[index] = GetItemDescription(inventorySlots[index])
+    end
+
+    return equipment
+end
+
+local function ScanCurrentProfession()
+    local professionInfo = GetNewestChildProfessionInfo()
+
+    if not professionInfo or not professionInfo.profession then
+        return false
+    end
+
+    local specializations, isComplete =
+        ScanSpecializations(professionInfo.professionID)
+
+    if not isComplete then
+        return false
+    end
+
+    local currencyInfo =
+        C_ProfSpecs.GetCurrencyInfoForSkillLine(professionInfo.professionID)
+
+    professionSnapshots[professionInfo.profession] = {
+        profession = professionInfo.profession,
+        professionID = professionInfo.professionID,
+        professionName = professionInfo.professionName,
+        expansionName = professionInfo.expansionName,
+        skillLevel = professionInfo.skillLevel,
+        maxSkillLevel = professionInfo.maxSkillLevel,
+        availableKnowledge = currencyInfo and currencyInfo.numAvailable or 0,
+        equipment = ScanEquipment(professionInfo.profession),
+        specializations = specializations,
+    }
+
+    return true
+end
+
+local function AddPathLines(lines, path, depth)
+    table.insert(
+        lines,
+        string.rep("  ", depth)
+            .. string.format(
+                "%s %d/%d",
+                path.name,
+                path.currentRank,
+                path.maxRank
+            )
+    )
+
+    for _, child in ipairs(path.children) do
+        AddPathLines(lines, child, depth + 1)
+    end
+end
+
+local function BuildProfessionLines(lines, snapshot)
+    local displayName = snapshot.professionName
+
+    table.insert(lines, "Profession: " .. displayName)
+    table.insert(
+        lines,
+        string.format("Skill: %d/%d", snapshot.skillLevel, snapshot.maxSkillLevel)
+    )
+    table.insert(
+        lines,
+        "Available knowledge: " .. snapshot.availableKnowledge
+    )
+    table.insert(lines, "Gear:")
+    table.insert(lines, "  Tool: " .. snapshot.equipment[1])
+    table.insert(lines, "  Accessory 1: " .. snapshot.equipment[2])
+    table.insert(lines, "  Accessory 2: " .. snapshot.equipment[3])
+    table.insert(lines, "")
+    table.insert(lines, "Specializations:")
+
+    if #snapshot.specializations == 0 then
+        table.insert(lines, "  None")
+    else
+        for _, specialization in ipairs(snapshot.specializations) do
+            AddPathLines(lines, specialization, 1)
+        end
+    end
+end
+
+local function CreateExportWindow()
+    local window = CreateFrame(
+        "Frame",
+        addonName .. "ExportWindow",
+        UIParent,
+        "BasicFrameTemplateWithInset"
+    )
+    window:SetSize(650, 520)
+    window:SetPoint("CENTER")
+    window:SetFrameStrata("DIALOG")
+    window:SetMovable(true)
+    window:EnableMouse(true)
+    window:RegisterForDrag("LeftButton")
+    window:SetScript("OnDragStart", window.StartMoving)
+    window:SetScript("OnDragStop", window.StopMovingOrSizing)
+    window:SetClampedToScreen(true)
+    window:Hide()
+
+    window.TitleText:SetText("RSH Profession Tracker Export")
+
+    local scrollFrame = CreateFrame(
+        "ScrollFrame",
+        nil,
+        window,
+        "UIPanelScrollFrameTemplate"
+    )
+    scrollFrame:SetPoint("TOPLEFT", 12, -32)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -30, 42)
+
+    local editBox = CreateFrame("EditBox", nil, scrollFrame)
+    editBox:SetMultiLine(true)
+    editBox:SetAutoFocus(false)
+    editBox:SetFontObject(ChatFontNormal)
+    editBox:SetWidth(590)
+    editBox:SetTextInsets(6, 6, 6, 6)
+    editBox:SetScript("OnEscapePressed", function(self)
+        self:ClearFocus()
+        window:Hide()
+    end)
+    editBox:SetScript("OnTextChanged", function(self)
+        scrollFrame:UpdateScrollChildRect()
+    end)
+    scrollFrame:SetScrollChild(editBox)
+    window.EditBox = editBox
+
+    local selectButton = CreateFrame(
+        "Button",
+        nil,
+        window,
+        "UIPanelButtonTemplate"
+    )
+    selectButton:SetSize(110, 24)
+    selectButton:SetPoint("BOTTOM", 0, 10)
+    selectButton:SetText("Select all")
+    selectButton:SetScript("OnClick", function()
+        editBox:SetFocus()
+        editBox:HighlightText()
+    end)
+
+    return window
+end
+
+local function ShowExport(text)
+    exportWindow = exportWindow or CreateExportWindow()
+    exportWindow.EditBox:SetText(text)
+    exportWindow:Show()
+    exportWindow.EditBox:SetFocus()
+    exportWindow.EditBox:HighlightText()
+end
+
+local function ExportProfessions()
+    ScanCurrentProfession()
+
+    for _, snapshot in pairs(professionSnapshots) do
+        snapshot.equipment = ScanEquipment(snapshot.profession)
+    end
+
+    local primaryProfessions = GetPrimaryProfessions()
+    local missingProfessions = {}
+    local lines = {
+        "Character: " .. (UnitName("player") or "Unknown"),
+        "Realm: " .. (GetRealmName() or "Unknown"),
+        "",
+    }
+    local exportedCount = 0
+
+    for _, primaryProfession in ipairs(primaryProfessions) do
+        local snapshot = primaryProfession.profession
+            and professionSnapshots[primaryProfession.profession]
+
+        if snapshot then
+            if exportedCount > 0 then
+                table.insert(lines, "")
+            end
+
+            BuildProfessionLines(lines, snapshot)
+            exportedCount = exportedCount + 1
+        else
+            table.insert(missingProfessions, primaryProfession.name)
+        end
+    end
+
+    if #missingProfessions > 0 then
+        PrintMessage(
+            "Missing specialization data for "
+                .. table.concat(missingProfessions, " and ")
+                .. ". Open each profession window once, then run "
+                .. "/rshprof export again."
+        )
+        return
+    end
+
+    if exportedCount == 0 then
+        PrintMessage("No primary professions were found.")
+        return
+    end
+
+    ShowExport(table.concat(lines, "\n"))
+end
+
+local function ScheduleCurrentProfessionScan()
+    C_Timer.After(0.25, function()
+        if ScanCurrentProfession() then
+            local professionInfo = GetNewestChildProfessionInfo()
+
+            if professionInfo then
+                PrintMessage(
+                    "Scanned "
+                        .. (professionInfo.expansionName
+                            or professionInfo.professionName)
+                        .. "."
+                )
+            end
+        end
+    end)
+end
+
+eventFrame:RegisterEvent("TRADE_SKILL_SHOW")
+eventFrame:RegisterEvent("SKILL_LINE_SPECS_RANKS_CHANGED")
+eventFrame:RegisterEvent("SKILL_LINE_SPECS_UNLOCKED")
+eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+
+eventFrame:SetScript("OnEvent", function(_, event)
+    if event == "TRADE_SKILL_SHOW" then
+        ScheduleCurrentProfessionScan()
+    else
+        C_Timer.After(0, ScanCurrentProfession)
+    end
+end)
+
+SLASH_RSHPROFESSIONTRACKER1 = "/rshprof"
+
+SlashCmdList.RSHPROFESSIONTRACKER = function(arguments)
+    local command = strtrim(arguments or ""):lower()
+
+    if command == "export" then
+        ExportProfessions()
+    else
+        PrintMessage("Use /rshprof export to create a copyable export.")
+    end
+end
