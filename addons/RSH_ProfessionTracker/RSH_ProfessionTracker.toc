@@ -2,6 +2,6 @@
 ## Title: RSH - Profession Tracker
 ## Notes: Exports current profession skills, equipment, and knowledge specializations
 ## Author: Rudi
-## Version: 1.1.0
+## Version: 1.2.0
 
 RSH_ProfessionTracker.lua

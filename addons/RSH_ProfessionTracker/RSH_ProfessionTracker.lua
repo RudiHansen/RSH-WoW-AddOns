@@ -2,6 +2,7 @@ local addonName = ...
 local eventFrame = CreateFrame("Frame")
 local professionSnapshots = {}
 local exportWindow
+local FUSED_VITALITY_ITEM_ID = 245345
 
 local function PrintMessage(message)
     print("|cff00ff00RSH Profession Tracker:|r " .. message)
@@ -740,6 +741,14 @@ local function ExportProfessions()
     local lines = {
         "Character: " .. (UnitName("player") or "Unknown"),
         "Realm: " .. (GetRealmName() or "Unknown"),
+        "Fused Vitality: "
+            .. C_Item.GetItemCount(
+                FUSED_VITALITY_ITEM_ID,
+                true,
+                false,
+                true,
+                false
+            ),
         "",
     }
     local exportedCount = 0
