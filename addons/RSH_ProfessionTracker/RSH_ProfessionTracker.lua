@@ -248,6 +248,206 @@ local function ScanEquipment(profession)
     return equipment
 end
 
+local function GetHighestQualityReagent(reagents)
+    local bestReagent
+    local bestQuality = -1
+
+    for _, reagent in ipairs(reagents or {}) do
+        local quality = reagent.itemID
+            and C_TradeSkillUI.GetItemReagentQualityByItemInfo(reagent.itemID)
+            or 0
+
+        if not bestReagent or (quality or 0) >= bestQuality then
+            bestReagent = reagent
+            bestQuality = quality or 0
+        end
+    end
+
+    return bestReagent
+end
+
+local function BuildBestReagentAllocation(recipeID)
+    local schematic = C_TradeSkillUI.GetRecipeSchematic(recipeID, false)
+
+    if not schematic then
+        return nil
+    end
+
+    local allocation = {}
+
+    for _, slot in ipairs(schematic.reagentSlotSchematics or {}) do
+        if slot.dataSlotType == Enum.TradeskillSlotDataType.ModifiedReagent
+            and slot.required
+        then
+            local reagent = GetHighestQualityReagent(slot.reagents)
+
+            if not reagent then
+                return nil
+            end
+
+            table.insert(allocation, {
+                reagent = reagent,
+                dataSlotIndex = slot.dataSlotIndex,
+                quantity = slot.quantityRequired,
+            })
+        end
+    end
+
+    return allocation
+end
+
+
+local function GetOperationQuality(operationInfo)
+    if not operationInfo or not operationInfo.isQualityCraft then
+        return nil
+    end
+
+    return operationInfo.craftingQuality
+end
+
+local function GetRecipeOutputItemID(recipeID, recipeInfo)
+    local qualityItemIDs = recipeInfo.qualityItemIDs
+        or C_TradeSkillUI.GetRecipeQualityItemIDs(recipeID)
+
+    if qualityItemIDs then
+        for index = #qualityItemIDs, 1, -1 do
+            if qualityItemIDs[index] then
+                return qualityItemIDs[index]
+            end
+        end
+    end
+
+    local outputInfo = C_TradeSkillUI.GetRecipeOutputItemData(recipeID)
+
+    return outputInfo and outputInfo.itemID
+end
+
+local function GetGearSlotName(itemID)
+    local _, _, _, inventoryType = C_Item.GetItemInfoInstant(itemID)
+
+    if inventoryType == "INVTYPE_PROFESSION_TOOL" then
+        return "Tool"
+    end
+
+    if inventoryType == "INVTYPE_PROFESSION_GEAR" then
+        return "Accessory"
+    end
+
+    return "Profession gear"
+end
+
+local function GetProfessionDisplayName(skillLineID)
+    local professionInfo =
+        C_TradeSkillUI.GetProfessionInfoBySkillLineID(skillLineID)
+
+    if professionInfo
+        and professionInfo.professionName
+        and professionInfo.professionName ~= ""
+    then
+        return professionInfo.professionName
+    end
+
+    return C_TradeSkillUI.GetTradeSkillDisplayName(skillLineID)
+        or "Unknown profession"
+end
+
+local function GetAvailableQualityText(recipeID, recipeInfo)
+    local maxQuality = recipeInfo.maxQuality
+    local qualityIDs = recipeInfo.qualityIDs
+        or C_TradeSkillUI.GetQualitiesForRecipe(recipeID)
+
+    if not maxQuality and qualityIDs then
+        maxQuality = #qualityIDs
+    end
+
+    if not maxQuality or maxQuality == 0 then
+        return "None"
+    end
+
+    if maxQuality == 1 then
+        return "1"
+    end
+
+    return "1-" .. maxQuality
+end
+
+local function ScanCraftableProfessionGear(professionInfo)
+    local currentInfo = C_TradeSkillUI.GetChildProfessionInfo()
+
+    if not currentInfo
+        or currentInfo.professionID ~= professionInfo.professionID
+    then
+        return nil, false
+    end
+
+    local concentrationCurrencyID =
+        C_TradeSkillUI.GetConcentrationCurrencyID(professionInfo.professionID)
+    local concentrationInfo = concentrationCurrencyID
+        and concentrationCurrencyID > 0
+        and C_CurrencyInfo.GetCurrencyInfo(concentrationCurrencyID)
+    local concentrationAvailable = concentrationInfo
+        and concentrationInfo.quantity
+        or 0
+    local gearRecipes = {}
+
+    for _, recipeID in ipairs(C_TradeSkillUI.GetAllRecipeIDs() or {}) do
+        local recipeInfo = C_TradeSkillUI.GetRecipeInfo(recipeID)
+
+        if recipeInfo and recipeInfo.learned then
+            local itemID = GetRecipeOutputItemID(recipeID, recipeInfo)
+            local targetSkillLineID = itemID
+                and C_TradeSkillUI.GetSkillLineForGear(itemID)
+
+            if targetSkillLineID then
+                local allocation = BuildBestReagentAllocation(recipeID)
+                local withoutConcentration = allocation
+                    and C_TradeSkillUI.GetCraftingOperationInfo(
+                        recipeID,
+                        allocation,
+                        nil,
+                        false
+                    )
+                local withConcentration = allocation
+                    and C_TradeSkillUI.GetCraftingOperationInfo(
+                        recipeID,
+                        allocation,
+                        nil,
+                        true
+                    )
+
+                table.insert(gearRecipes, {
+                    name = recipeInfo.name,
+                    targetProfession =
+                        GetProfessionDisplayName(targetSkillLineID),
+                    slot = GetGearSlotName(itemID),
+                    availableQualities =
+                        GetAvailableQualityText(recipeID, recipeInfo),
+                    bestQuality = GetOperationQuality(withoutConcentration),
+                    concentrationQuality =
+                        GetOperationQuality(withConcentration),
+                    concentrationCost = withConcentration
+                        and withConcentration.concentrationCost,
+                    concentrationAvailable = concentrationAvailable,
+                })
+            end
+        end
+    end
+
+    table.sort(gearRecipes, function(left, right)
+        if left.targetProfession ~= right.targetProfession then
+            return left.targetProfession < right.targetProfession
+        end
+
+        if left.slot ~= right.slot then
+            return left.slot < right.slot
+        end
+
+        return left.name < right.name
+    end)
+
+    return gearRecipes, true
+end
+
 local function GetSortedStats(stats)
     local sortedStats = {}
 
@@ -326,6 +526,12 @@ local function ScanCurrentProfession()
 
     local currencyInfo =
         C_ProfSpecs.GetCurrencyInfoForSkillLine(professionInfo.professionID)
+    local craftableGear, recipesComplete =
+        ScanCraftableProfessionGear(professionInfo)
+
+    if not recipesComplete then
+        return false
+    end
 
     professionSnapshots[professionInfo.profession] = {
         profession = professionInfo.profession,
@@ -337,9 +543,71 @@ local function ScanCurrentProfession()
         availableKnowledge = currencyInfo and currencyInfo.numAvailable or 0,
         equipment = ScanEquipment(professionInfo.profession),
         specializations = specializations,
+        craftableGear = craftableGear,
     }
 
     return true
+end
+
+local function AddCraftableGearLines(lines, gearRecipes)
+    table.insert(lines, "")
+    table.insert(lines, "Craftable profession gear:")
+
+    if not gearRecipes or #gearRecipes == 0 then
+        table.insert(lines, "  None")
+        return
+    end
+
+    local previousProfession
+
+    for _, recipe in ipairs(gearRecipes) do
+        if recipe.targetProfession ~= previousProfession then
+            table.insert(lines, "  " .. recipe.targetProfession .. ":")
+            previousProfession = recipe.targetProfession
+        end
+
+        table.insert(lines, "    " .. recipe.slot .. ": " .. recipe.name)
+        table.insert(
+            lines,
+            "      Available qualities: " .. recipe.availableQualities
+        )
+
+        if recipe.bestQuality then
+            table.insert(
+                lines,
+                "      Best reagents: Quality " .. recipe.bestQuality
+            )
+        else
+            table.insert(lines, "      Best reagents: Unable to calculate")
+        end
+
+        if recipe.concentrationQuality and recipe.concentrationCost then
+            local availability = recipe.concentrationAvailable
+                >= recipe.concentrationCost
+                and "available"
+                or "unavailable"
+
+            table.insert(
+                lines,
+                "      Best reagents + concentration: Quality "
+                    .. recipe.concentrationQuality
+            )
+            table.insert(
+                lines,
+                string.format(
+                    "      Concentration required: %d (%s; %d available)",
+                    recipe.concentrationCost,
+                    availability,
+                    recipe.concentrationAvailable
+                )
+            )
+        else
+            table.insert(
+                lines,
+                "      Best reagents + concentration: Unable to calculate"
+            )
+        end
+    end
 end
 
 local function AddPathLines(lines, path, depth)
@@ -386,6 +654,8 @@ local function BuildProfessionLines(lines, snapshot)
             AddPathLines(lines, specialization, 1)
         end
     end
+
+    AddCraftableGearLines(lines, snapshot.craftableGear)
 end
 
 local function CreateExportWindow()
