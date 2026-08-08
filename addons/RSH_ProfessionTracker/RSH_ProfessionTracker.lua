@@ -465,6 +465,16 @@ local function GetProfessionGearInfo(recipeID, recipeInfo)
         end
     end
 
+    for _, itemID in ipairs(itemIDs) do
+        local _, _, _, inventoryType = C_Item.GetItemInfoInstant(itemID)
+
+        if inventoryType == "INVTYPE_PROFESSION_TOOL"
+            or inventoryType == "INVTYPE_PROFESSION_GEAR"
+        then
+            return itemID, nil, inventoryType, itemIDs
+        end
+    end
+
     return nil, nil
 end
 
@@ -542,12 +552,13 @@ local function ScanCraftableProfessionGear(professionInfo)
         and concentrationInfo.quantity
         or 0
     local gearRecipes = {}
+    local gearWarnings = {}
 
     for _, recipeID in ipairs(C_TradeSkillUI.GetAllRecipeIDs() or {}) do
         local recipeInfo = C_TradeSkillUI.GetRecipeInfo(recipeID)
 
         if recipeInfo and recipeInfo.learned then
-            local itemID, targetSkillLineID =
+            local itemID, targetSkillLineID, inventoryType, outputItemIDs =
                 GetProfessionGearInfo(recipeID, recipeInfo)
 
             if targetSkillLineID then
@@ -582,6 +593,21 @@ local function ScanCraftableProfessionGear(professionInfo)
                         and withConcentration.concentrationCost,
                     concentrationAvailable = concentrationAvailable,
                 })
+            elseif itemID and inventoryType then
+                local clientVersion, clientBuild = GetBuildInfo()
+
+                table.insert(gearWarnings, {
+                    recipeID = recipeID,
+                    recipeName = recipeInfo.name,
+                    itemID = itemID,
+                    outputItemIDs = outputItemIDs,
+                    inventoryType = inventoryType,
+                    sourceProfession = professionInfo.professionName,
+                    sourceProfessionID = professionInfo.professionID,
+                    clientVersion = clientVersion,
+                    clientBuild = clientBuild,
+                    clientLocale = GetLocale(),
+                })
             end
         end
     end
@@ -598,7 +624,11 @@ local function ScanCraftableProfessionGear(professionInfo)
         return left.name < right.name
     end)
 
-    return gearRecipes, true
+    table.sort(gearWarnings, function(left, right)
+        return left.recipeID < right.recipeID
+    end)
+
+    return gearRecipes, true, gearWarnings
 end
 
 local function GetSortedStats(stats)
@@ -700,7 +730,7 @@ local function ScanCurrentProfession()
 
     local currencyInfo =
         C_ProfSpecs.GetCurrencyInfoForSkillLine(professionInfo.professionID)
-    local craftableGear, recipesComplete =
+    local craftableGear, recipesComplete, craftableGearWarnings =
         ScanCraftableProfessionGear(professionInfo)
 
     if not recipesComplete then
@@ -719,6 +749,7 @@ local function ScanCurrentProfession()
         equipment = ScanEquipment(professionInfo.profession),
         specializations = specializations,
         craftableGear = craftableGear,
+        craftableGearWarnings = craftableGearWarnings,
         collectedAt = collectedAt,
     }
 
@@ -799,6 +830,58 @@ local function AddCraftableGearLines(lines, gearRecipes)
     end
 end
 
+local function AddCraftableGearWarningLines(lines, warnings)
+    if not warnings or #warnings == 0 then
+        return
+    end
+
+    table.insert(lines, "")
+    table.insert(lines, "WARNING: Unclassified craftable profession gear")
+    table.insert(
+        lines,
+        "WoW returned no target profession. Copy this block when reporting it:"
+    )
+
+    for _, warning in ipairs(warnings) do
+        local outputItemIDs = {}
+
+        for _, itemID in ipairs(warning.outputItemIDs or {}) do
+            table.insert(outputItemIDs, tostring(itemID))
+        end
+
+        table.insert(lines, "  Recipe: " .. (warning.recipeName or "Unknown"))
+        table.insert(
+            lines,
+            "    Crafting profession: "
+                .. tostring(warning.sourceProfession or "Unknown")
+                .. " ("
+                .. tostring(warning.sourceProfessionID or "Unknown")
+                .. ")"
+        )
+        table.insert(lines, "    Recipe ID: " .. tostring(warning.recipeID))
+        table.insert(lines, "    Item ID: " .. tostring(warning.itemID))
+        table.insert(
+            lines,
+            "    Output item IDs: " .. table.concat(outputItemIDs, ", ")
+        )
+        table.insert(
+            lines,
+            "    Inventory type: " .. tostring(warning.inventoryType)
+        )
+        table.insert(lines, "    GetSkillLineForGear: nil")
+        table.insert(
+            lines,
+            "    Client: "
+                .. tostring(warning.clientVersion or "Unknown")
+                .. " (build "
+                .. tostring(warning.clientBuild or "Unknown")
+                .. ", "
+                .. tostring(warning.clientLocale or "Unknown")
+                .. ")"
+        )
+    end
+end
+
 local function AddPathLines(lines, path, depth)
     table.insert(
         lines,
@@ -846,6 +929,7 @@ local function BuildProfessionLines(lines, snapshot)
     end
 
     AddCraftableGearLines(lines, snapshot.craftableGear)
+    AddCraftableGearWarningLines(lines, snapshot.craftableGearWarnings)
 end
 
 local function CreateExportWindow()
@@ -976,12 +1060,26 @@ local function ScheduleCurrentProfessionScan()
             local professionInfo = GetMidnightChildProfessionInfo()
 
             if professionInfo then
+                local snapshot = professionSnapshots[professionInfo.profession]
+
                 PrintMessage(
                     "Scanned "
                         .. (professionInfo.expansionName
                             or professionInfo.professionName)
                         .. "."
                 )
+
+                if snapshot
+                    and snapshot.craftableGearWarnings
+                    and #snapshot.craftableGearWarnings > 0
+                then
+                    PrintMessage(
+                        "Warning: Found "
+                            .. #snapshot.craftableGearWarnings
+                            .. " unclassified profession gear recipe(s). "
+                            .. "Run /rshprof export and copy the WARNING block."
+                    )
+                end
             end
         else
             local baseProfessionInfo = C_TradeSkillUI.GetBaseProfessionInfo()

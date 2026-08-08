@@ -285,6 +285,47 @@ local function add_craftable_gear(lines, recipes)
     end
 end
 
+local function add_craftable_gear_warnings(lines, warnings)
+    if type(warnings) ~= "table" or #warnings == 0 then
+        return
+    end
+
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "WARNING: Unclassified craftable profession gear"
+    lines[#lines + 1] =
+        "WoW returned no target profession. Copy this block when reporting it:"
+
+    for _, warning in ipairs(warnings) do
+        local output_item_ids = {}
+
+        for _, item_id in ipairs(warning.outputItemIDs or {}) do
+            output_item_ids[#output_item_ids + 1] = tostring(item_id)
+        end
+
+        lines[#lines + 1] = "  Recipe: "
+            .. tostring(warning.recipeName or "Unknown")
+        lines[#lines + 1] = "    Crafting profession: "
+            .. tostring(warning.sourceProfession or "Unknown")
+            .. " ("
+            .. tostring(warning.sourceProfessionID or "Unknown")
+            .. ")"
+        lines[#lines + 1] = "    Recipe ID: " .. tostring(warning.recipeID)
+        lines[#lines + 1] = "    Item ID: " .. tostring(warning.itemID)
+        lines[#lines + 1] = "    Output item IDs: "
+            .. table.concat(output_item_ids, ", ")
+        lines[#lines + 1] = "    Inventory type: "
+            .. tostring(warning.inventoryType)
+        lines[#lines + 1] = "    GetSkillLineForGear: nil"
+        lines[#lines + 1] = "    Client: "
+            .. tostring(warning.clientVersion or "Unknown")
+            .. " (build "
+            .. tostring(warning.clientBuild or "Unknown")
+            .. ", "
+            .. tostring(warning.clientLocale or "Unknown")
+            .. ")"
+    end
+end
+
 local function add_profession(lines, snapshot)
     lines[#lines + 1] = "Profession: "
         .. tostring(snapshot.professionName or "Unknown")
@@ -319,6 +360,7 @@ local function add_profession(lines, snapshot)
     end
 
     add_craftable_gear(lines, snapshot.craftableGear)
+    add_craftable_gear_warnings(lines, snapshot.craftableGearWarnings)
 end
 
 local function sorted_professions(professions)
