@@ -374,21 +374,86 @@ local function GetOperationQuality(operationInfo)
     return operationInfo.craftingQuality
 end
 
-local function GetRecipeOutputItemID(recipeID, recipeInfo)
+local function GetRecipeOutputItemIDs(recipeID, recipeInfo)
+    local itemIDs = {}
+    local seenItemIDs = {}
     local qualityItemIDs = recipeInfo.qualityItemIDs
         or C_TradeSkillUI.GetRecipeQualityItemIDs(recipeID)
 
     if qualityItemIDs then
         for index = #qualityItemIDs, 1, -1 do
-            if qualityItemIDs[index] then
-                return qualityItemIDs[index]
+            local itemID = qualityItemIDs[index]
+
+            if itemID and not seenItemIDs[itemID] then
+                table.insert(itemIDs, itemID)
+                seenItemIDs[itemID] = true
             end
         end
     end
 
     local outputInfo = C_TradeSkillUI.GetRecipeOutputItemData(recipeID)
+    local outputItemID = outputInfo and outputInfo.itemID
 
-    return outputInfo and outputInfo.itemID
+    if outputItemID and not seenItemIDs[outputItemID] then
+        table.insert(itemIDs, outputItemID)
+    end
+
+    return itemIDs
+end
+
+local PROFESSION_SKILL_LINES_BY_NAME = {
+    { name = "Alchemy", skillLineID = 171 },
+    { name = "Blacksmithing", skillLineID = 164 },
+    { name = "Cooking", skillLineID = 185 },
+    { name = "Enchanting", skillLineID = 333 },
+    { name = "Engineering", skillLineID = 202 },
+    { name = "Fishing", skillLineID = 356 },
+    { name = "Herbalism", skillLineID = 182 },
+    { name = "Inscription", skillLineID = 773 },
+    { name = "Jewelcrafting", skillLineID = 755 },
+    { name = "Leatherworking", skillLineID = 165 },
+    { name = "Mining", skillLineID = 186 },
+    { name = "Skinning", skillLineID = 393 },
+    { name = "Tailoring", skillLineID = 197 },
+}
+
+local function GetProfessionSkillLineFromRecipeName(recipeName)
+    for _, profession in ipairs(PROFESSION_SKILL_LINES_BY_NAME) do
+        if recipeName:find(profession.name, 1, true) then
+            return profession.skillLineID
+        end
+    end
+
+    return nil
+end
+
+local function GetProfessionGearInfo(recipeID, recipeInfo)
+    local itemIDs = GetRecipeOutputItemIDs(recipeID, recipeInfo)
+
+    for _, itemID in ipairs(itemIDs) do
+        local skillLineID = C_TradeSkillUI.GetSkillLineForGear(itemID)
+
+        if skillLineID then
+            return itemID, skillLineID
+        end
+    end
+
+    local fallbackSkillLineID =
+        GetProfessionSkillLineFromRecipeName(recipeInfo.name or "")
+
+    if fallbackSkillLineID then
+        for _, itemID in ipairs(itemIDs) do
+            local _, _, _, inventoryType = C_Item.GetItemInfoInstant(itemID)
+
+            if inventoryType == "INVTYPE_PROFESSION_TOOL"
+                or inventoryType == "INVTYPE_PROFESSION_GEAR"
+            then
+                return itemID, fallbackSkillLineID
+            end
+        end
+    end
+
+    return nil, nil
 end
 
 local function GetGearSlotName(itemID)
@@ -470,9 +535,8 @@ local function ScanCraftableProfessionGear(professionInfo)
         local recipeInfo = C_TradeSkillUI.GetRecipeInfo(recipeID)
 
         if recipeInfo and recipeInfo.learned then
-            local itemID = GetRecipeOutputItemID(recipeID, recipeInfo)
-            local targetSkillLineID = itemID
-                and C_TradeSkillUI.GetSkillLineForGear(itemID)
+            local itemID, targetSkillLineID =
+                GetProfessionGearInfo(recipeID, recipeInfo)
 
             if targetSkillLineID then
                 local allocation = BuildBestReagentAllocation(recipeID)
