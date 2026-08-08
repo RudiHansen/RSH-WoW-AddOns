@@ -405,6 +405,13 @@ local function GetGearSlotName(itemID)
     return "Profession gear"
 end
 
+local function GetItemRarityName(itemID)
+    local _, _, itemQuality = C_Item.GetItemInfo(itemID)
+
+    return itemQuality and _G["ITEM_QUALITY" .. itemQuality .. "_DESC"]
+        or "Unknown"
+end
+
 local function GetProfessionDisplayName(skillLineID)
     local professionInfo =
         C_TradeSkillUI.GetProfessionInfoBySkillLineID(skillLineID)
@@ -486,6 +493,7 @@ local function ScanCraftableProfessionGear(professionInfo)
 
                 table.insert(gearRecipes, {
                     name = recipeInfo.name,
+                    rarity = GetItemRarityName(itemID),
                     targetProfession =
                         GetProfessionDisplayName(targetSkillLineID),
                     slot = GetGearSlotName(itemID),
@@ -664,21 +672,29 @@ local function AddCraftableGearLines(lines, gearRecipes)
         end
 
         table.insert(lines, "    " .. recipe.slot .. ": " .. recipe.name)
+        table.insert(lines, "      Rarity: " .. (recipe.rarity or "Unknown"))
         table.insert(
             lines,
             "      Available qualities: " .. recipe.availableQualities
         )
-
         if recipe.bestQuality then
             table.insert(
                 lines,
-                "      Best reagents: Quality " .. recipe.bestQuality
+                "      Best quality: " .. recipe.bestQuality
             )
         else
-            table.insert(lines, "      Best reagents: Unable to calculate")
+            table.insert(lines, "      Best quality: Unable to calculate")
         end
 
-        if recipe.concentrationQuality and recipe.concentrationCost then
+        if recipe.bestQuality
+            and recipe.concentrationQuality
+            and recipe.concentrationQuality <= recipe.bestQuality
+        then
+            table.insert(
+                lines,
+                "      Best quality with Concentration: Not required"
+            )
+        elseif recipe.concentrationQuality and recipe.concentrationCost then
             local availability = recipe.concentrationAvailable
                 >= recipe.concentrationCost
                 and "available"
@@ -686,7 +702,7 @@ local function AddCraftableGearLines(lines, gearRecipes)
 
             table.insert(
                 lines,
-                "      Best reagents + concentration: Quality "
+                "      Best quality with Concentration: "
                     .. recipe.concentrationQuality
             )
             table.insert(
@@ -701,7 +717,7 @@ local function AddCraftableGearLines(lines, gearRecipes)
         else
             table.insert(
                 lines,
-                "      Best reagents + concentration: Unable to calculate"
+                "      Best quality with Concentration: Unable to calculate"
             )
         end
     end

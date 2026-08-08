@@ -248,22 +248,29 @@ local function add_craftable_gear(lines, recipes)
 
         lines[#lines + 1] = "    " .. tostring(recipe.slot or "Profession gear")
             .. ": " .. tostring(recipe.name or "Unknown recipe")
+        lines[#lines + 1] = "      Rarity: "
+            .. tostring(recipe.rarity or "Unknown")
         lines[#lines + 1] = "      Available qualities: "
             .. tostring(recipe.availableQualities or "Unknown")
-
         if recipe.bestQuality then
-            lines[#lines + 1] = "      Best reagents: Quality "
+            lines[#lines + 1] = "      Best quality: "
                 .. recipe.bestQuality
         else
-            lines[#lines + 1] = "      Best reagents: Unable to calculate"
+            lines[#lines + 1] = "      Best quality: Unable to calculate"
         end
 
-        if recipe.concentrationQuality and recipe.concentrationCost then
+        if recipe.bestQuality
+            and recipe.concentrationQuality
+            and recipe.concentrationQuality <= recipe.bestQuality
+        then
+            lines[#lines + 1] =
+                "      Best quality with Concentration: Not required"
+        elseif recipe.concentrationQuality and recipe.concentrationCost then
             local available = tonumber(recipe.concentrationAvailable) or 0
             local cost = tonumber(recipe.concentrationCost) or 0
             local availability = available >= cost and "available" or "unavailable"
 
-            lines[#lines + 1] = "      Best reagents + concentration: Quality "
+            lines[#lines + 1] = "      Best quality with Concentration: "
                 .. recipe.concentrationQuality
             lines[#lines + 1] = string.format(
                 "      Concentration required: %d (%s; %d available)",
@@ -273,7 +280,7 @@ local function add_craftable_gear(lines, recipes)
             )
         else
             lines[#lines + 1] =
-                "      Best reagents + concentration: Unable to calculate"
+                "      Best quality with Concentration: Unable to calculate"
         end
     end
 end
