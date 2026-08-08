@@ -417,6 +417,12 @@ local PROFESSION_SKILL_LINES_BY_NAME = {
     { name = "Tailoring", skillLineID = 197 },
 }
 
+-- GetSkillLineForGear does not currently identify every Midnight profession
+-- item. Keep narrowly scoped recipe overrides for confirmed API omissions.
+local PROFESSION_SKILL_LINE_BY_RECIPE_ID = {
+    [1229602] = 182, -- Sun-Blessed Sickle: Herbalism
+}
+
 local function GetProfessionSkillLineFromRecipeName(recipeName)
     for _, profession in ipairs(PROFESSION_SKILL_LINES_BY_NAME) do
         if recipeName:find(profession.name, 1, true) then
@@ -436,6 +442,12 @@ local function GetProfessionGearInfo(recipeID, recipeInfo)
         if skillLineID then
             return itemID, skillLineID
         end
+    end
+
+    local overrideSkillLineID = PROFESSION_SKILL_LINE_BY_RECIPE_ID[recipeID]
+
+    if overrideSkillLineID and itemIDs[1] then
+        return itemIDs[1], overrideSkillLineID
     end
 
     local fallbackSkillLineID =
