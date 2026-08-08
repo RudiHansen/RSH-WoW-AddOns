@@ -420,7 +420,16 @@ local PROFESSION_SKILL_LINES_BY_NAME = {
 -- GetSkillLineForGear does not currently identify every Midnight profession
 -- item. Keep narrowly scoped recipe overrides for confirmed API omissions.
 local PROFESSION_SKILL_LINE_BY_RECIPE_ID = {
+    [1229599] = 165, -- Sun-Blessed Leatherworker's Knife: Leatherworking
     [1229602] = 182, -- Sun-Blessed Sickle: Herbalism
+    [1229607] = 165, -- Thalassian Leatherworker's Knife: Leatherworking
+    [1229610] = 182, -- Thalassian Sickle: Herbalism
+    [1229612] = 165, -- Thalassian Leatherworker's Toolset: Leatherworking
+    [1229613] = 197, -- Thalassian Needle Set: Tailoring
+    [1262899] = 165, -- Sunforged Leatherworker's Knife: Leatherworking
+    [1264645] = 165, -- Sunforged Leatherworker's Toolset: Leatherworking
+    [1264646] = 197, -- Sunforged Needle Set: Tailoring
+    [1264651] = 182, -- Sunforged Sickle: Herbalism
 }
 
 local function GetProfessionSkillLineFromRecipeName(recipeName)
