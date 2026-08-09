@@ -420,16 +420,29 @@ local PROFESSION_SKILL_LINES_BY_NAME = {
 -- GetSkillLineForGear does not currently identify every Midnight profession
 -- item. Keep narrowly scoped recipe overrides for confirmed API omissions.
 local PROFESSION_SKILL_LINE_BY_RECIPE_ID = {
+    [376553] = 182, -- Wildercloth Gardening Hat: Herbalism
+    [1230021] = 171, -- Hobbyist Alchemist's Mixing Rod: Alchemy
+    [1230024] = 171, -- Sin'dorei Alchemist's Mixing Rod: Alchemy
+    [1230491] = 333, -- Silvermoon Focusing Shard: Enchanting
+    [1230495] = 333, -- Sin'dorei Enchanter's Crystal: Enchanting
+    [1242464] = 333, -- Attuned Thalassian Rune-Prism: Enchanting
     [1229599] = 165, -- Sun-Blessed Leatherworker's Knife: Leatherworking
     [1229602] = 182, -- Sun-Blessed Sickle: Herbalism
     [1229607] = 165, -- Thalassian Leatherworker's Knife: Leatherworking
     [1229610] = 182, -- Thalassian Sickle: Herbalism
     [1229612] = 165, -- Thalassian Leatherworker's Toolset: Leatherworking
     [1229613] = 197, -- Thalassian Needle Set: Tailoring
+    [1229898] = 755, -- Farstrider Clampers: Jewelcrafting
+    [1229900] = 197, -- Farstrider Fabric Cutters: Tailoring
+    [1229905] = 755, -- Sin'dorei Clampers: Jewelcrafting
+    [1229907] = 197, -- Sin'dorei Snippers: Tailoring
     [1262899] = 165, -- Sunforged Leatherworker's Knife: Leatherworking
+    [1264526] = 197, -- Self-Sharpening Sin'dorei Snippers: Tailoring
+    [1264528] = 755, -- Giga-Gem Grippers: Jewelcrafting
     [1264645] = 165, -- Sunforged Leatherworker's Toolset: Leatherworking
     [1264646] = 197, -- Sunforged Needle Set: Tailoring
     [1264651] = 182, -- Sunforged Sickle: Herbalism
+    [1279128] = 182, -- Thalassian Herbalist's Cowl: Herbalism
 }
 
 local function GetProfessionSkillLineFromRecipeName(recipeName)
