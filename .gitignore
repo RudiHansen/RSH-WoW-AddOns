@@ -11,3 +11,5 @@
 # Generated or local data
 *.log
 *.bak
+local-data/*.lua
+local-data/*.lua.bak
