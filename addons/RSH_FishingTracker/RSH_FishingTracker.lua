@@ -10,6 +10,8 @@ local FISHING_SPELL_IDS = {
 
 local characterRecord
 local pendingCast
+local lastFishingCastGUID
+local lastFishingAttemptAt = 0
 local session = {
     attempts = 0,
     catches = 0,
@@ -102,7 +104,7 @@ local function FormatRate(drops, catches)
     return string.format("%.2f%%", drops * 100 / catches)
 end
 
-local function RecordLoot(kind, id, name, quantity)
+local function RecordLoot(kind, id, name, quantity, countCatch)
     local key = kind .. ":" .. id
     local lootRecord = characterRecord.loot[key]
 
@@ -112,12 +114,18 @@ local function RecordLoot(kind, id, name, quantity)
             id = id,
             name = name,
             quantity = 0,
+            catches = 0,
         }
         characterRecord.loot[key] = lootRecord
     end
 
     lootRecord.name = name or lootRecord.name
     lootRecord.quantity = lootRecord.quantity + quantity
+    lootRecord.catches = lootRecord.catches or 0
+
+    if countCatch then
+        lootRecord.catches = lootRecord.catches + 1
+    end
 end
 
 local function AnnounceDundun(quantity)
@@ -144,6 +152,7 @@ local function RecordDundun(quantity)
         return
     end
 
+    local isFirstDundunRecord = pendingCast.dundunRecorded == 0
     pendingCast.dundunRecorded =
         pendingCast.dundunRecorded + unrecordedQuantity
     characterRecord.dundun = characterRecord.dundun + unrecordedQuantity
@@ -154,7 +163,8 @@ local function RecordDundun(quantity)
         "currency",
         DUNDUN_CURRENCY_ID,
         currencyInfo and currencyInfo.name or "Shard of Dundun",
-        unrecordedQuantity
+        unrecordedQuantity,
+        isFirstDundunRecord
     )
     AnnounceDundun(unrecordedQuantity)
 end
@@ -180,6 +190,8 @@ local function ReadLoot()
         fishingSkill = fishingSkill,
     }
 
+    local recordedLoot = {}
+
     for lootSlot = 1, GetNumLootItems() do
         local _, itemName, quantity, currencyID =
             GetLootSlotInfo(lootSlot)
@@ -189,24 +201,30 @@ local function ReadLoot()
             if currencyID == DUNDUN_CURRENCY_ID then
                 RecordDundun(quantity)
             else
+                local lootKey = "currency:" .. currencyID
                 RecordLoot(
                     "currency",
                     currencyID,
                     itemName or "Unknown currency",
-                    quantity
+                    quantity,
+                    not recordedLoot[lootKey]
                 )
+                recordedLoot[lootKey] = true
             end
         else
             local itemLink = GetLootSlotLink(lootSlot)
             local itemID = itemLink and C_Item.GetItemInfoInstant(itemLink)
 
             if itemID then
+                local lootKey = "item:" .. itemID
                 RecordLoot(
                     "item",
                     itemID,
                     itemName or itemLink,
-                    quantity
+                    quantity,
+                    not recordedLoot[lootKey]
                 )
+                recordedLoot[lootKey] = true
             end
         end
     end
@@ -240,7 +258,20 @@ local function FinishCatch()
     end)
 end
 
-local function StartFishingCast()
+local function StartFishingCast(castGUID)
+    local currentTime = GetTime()
+
+    if castGUID and castGUID == lastFishingCastGUID then
+        return
+    end
+
+    -- Retail can report more than one fishing spell for a single physical cast.
+    if currentTime - lastFishingAttemptAt < 1 then
+        return
+    end
+
+    lastFishingCastGUID = castGUID
+    lastFishingAttemptAt = currentTime
     characterRecord.attempts = characterRecord.attempts + 1
     session.attempts = session.attempts + 1
     pendingCast = {
@@ -268,6 +299,39 @@ local function PrintStatistics(label, attempts, catches, dundun)
         dundun,
         FormatRate(dundun, catches)
     ))
+end
+
+local function PrintLootStatistics()
+    local lootRecords = {}
+
+    for _, lootRecord in pairs(characterRecord.loot) do
+        table.insert(lootRecords, lootRecord)
+    end
+
+    table.sort(lootRecords, function(left, right)
+        local leftName = left.name or ""
+        local rightName = right.name or ""
+        return leftName < rightName
+    end)
+
+    if #lootRecords == 0 then
+        PrintMessage("No fishing loot has been recorded yet.")
+        return
+    end
+
+    PrintMessage("Recorded fishing loot:")
+
+    for _, lootRecord in ipairs(lootRecords) do
+        local lootCatches = lootRecord.catches or 0
+
+        PrintMessage(string.format(
+            "  %s: %d from %d catches (%s drop rate).",
+            lootRecord.name or "Unknown",
+            lootRecord.quantity or 0,
+            lootCatches,
+            FormatRate(lootCatches, characterRecord.catches)
+        ))
+    end
 end
 
 local function HandleSlashCommand(arguments)
@@ -300,6 +364,8 @@ local function HandleSlashCommand(arguments)
                 skill.maxSkillLevel
             ))
         end
+
+        PrintLootStatistics()
     end
 end
 
@@ -313,10 +379,10 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_LOGIN" then
         characterRecord = GetCharacterRecord()
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
-        local unitTarget, _, spellID = ...
+        local unitTarget, castGUID, spellID = ...
 
         if unitTarget == "player" and IsFishingSpell(spellID) then
-            StartFishingCast()
+            StartFishingCast(castGUID)
         end
     elseif event == "LOOT_READY" then
         ReadLoot()
