@@ -1,0 +1,10 @@
+## Interface: 120007
+## Title: RSH
+## Notes: Shared interface for RSH addons
+## Author: Rudi
+## Version: 0.1.0
+## IconTexture: Interface\Icons\INV_Misc_Gear_01
+## AddonCompartmentFunc: RSH_OnAddonCompartmentClick
+## SavedVariables: RSHDB
+
+RSH.lua

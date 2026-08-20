@@ -4,5 +4,7 @@
 ## Author: Rudi
 ## Version: 2.0.0
 ## SavedVariables: CurrencyTrackerDB
+## OptionalDeps: RSH
 
 RSH_CurrencyTracker.lua
+RSH_CurrencyTrackerUI.lua
