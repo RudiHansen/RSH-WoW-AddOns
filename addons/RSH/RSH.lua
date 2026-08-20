@@ -4,7 +4,6 @@ _G.RSH = RSH
 local WINDOW_WIDTH = 760
 local WINDOW_HEIGHT = 500
 local NAVIGATION_WIDTH = 150
-local MINIMAP_BUTTON_RADIUS = 80
 local pages = {}
 local pageByID = {}
 local navigationButtons = {}
@@ -13,7 +12,15 @@ local contentFrame
 local selectedPageID
 
 RSHDB = RSHDB or {}
-RSHDB.minimapButtonAngle = RSHDB.minimapButtonAngle or 225
+RSHDB.minimap = RSHDB.minimap or {}
+
+if RSHDB.minimapButtonAngle then
+    if not RSHDB.minimap.minimapPos then
+        RSHDB.minimap.minimapPos = RSHDB.minimapButtonAngle
+    end
+
+    RSHDB.minimapButtonAngle = nil
+end
 
 local function SortPages()
     table.sort(pages, function(left, right)
@@ -233,75 +240,25 @@ function RSH:Close()
     end
 end
 
-local function PositionMinimapButton(button)
-    local angle = math.rad(RSHDB.minimapButtonAngle)
+local function RegisterMinimapButton()
+    local dataBroker = LibStub("LibDataBroker-1.1")
+    local minimapIcon = LibStub("LibDBIcon-1.0")
+    local launcher = dataBroker:NewDataObject("RSH", {
+        type = "launcher",
+        text = "RSH",
+        icon = "Interface\\Icons\\INV_Misc_Gear_01",
+        OnClick = function(_, button)
+            if button == "LeftButton" then
+                RSH:Toggle()
+            end
+        end,
+        OnTooltipShow = function(tooltip)
+            tooltip:AddLine("RSH")
+            tooltip:AddLine("Click to open the RSH window.", 1, 1, 1)
+        end,
+    })
 
-    button:ClearAllPoints()
-    button:SetPoint(
-        "CENTER",
-        Minimap,
-        "CENTER",
-        math.cos(angle) * MINIMAP_BUTTON_RADIUS,
-        math.sin(angle) * MINIMAP_BUTTON_RADIUS
-    )
-end
-
-local function UpdateMinimapButtonPosition(button)
-    local cursorX, cursorY = GetCursorPosition()
-    local minimapX, minimapY = Minimap:GetCenter()
-    local scale = Minimap:GetEffectiveScale()
-
-    cursorX = cursorX / scale
-    cursorY = cursorY / scale
-    RSHDB.minimapButtonAngle = math.deg(math.atan2(
-        cursorY - minimapY,
-        cursorX - minimapX
-    ))
-    PositionMinimapButton(button)
-end
-
-local function CreateMinimapButton()
-    local button = CreateFrame("Button", "RSHMinimapButton", Minimap)
-    button:SetSize(32, 32)
-    button:SetFrameStrata("MEDIUM")
-    button:SetFrameLevel(Minimap:GetFrameLevel() + 8)
-    button:RegisterForClicks("LeftButtonUp")
-    button:RegisterForDrag("LeftButton")
-    button:SetNormalTexture("Interface\\Icons\\INV_Misc_Gear_01")
-    button:SetHighlightTexture(
-        "Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight"
-    )
-
-    local icon = button:GetNormalTexture()
-    icon:SetSize(20, 20)
-    icon:SetPoint("CENTER")
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-
-    local border = button:CreateTexture(nil, "OVERLAY")
-    border:SetSize(54, 54)
-    border:SetPoint("TOPLEFT")
-    border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-
-    button:SetScript("OnClick", function()
-        RSH:Toggle()
-    end)
-    button:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:SetText("RSH")
-        GameTooltip:AddLine("Click to open the RSH window.", 1, 1, 1)
-        GameTooltip:Show()
-    end)
-    button:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    button:SetScript("OnDragStart", function(self)
-        self:SetScript("OnUpdate", UpdateMinimapButtonPosition)
-    end)
-    button:SetScript("OnDragStop", function(self)
-        self:SetScript("OnUpdate", nil)
-    end)
-
-    PositionMinimapButton(button)
+    minimapIcon:Register("RSH", launcher, RSHDB.minimap)
 end
 
 function RSH_OnAddonCompartmentClick()
@@ -314,4 +271,4 @@ SlashCmdList.RSH = function()
     RSH:Toggle()
 end
 
-CreateMinimapButton()
+RegisterMinimapButton()
