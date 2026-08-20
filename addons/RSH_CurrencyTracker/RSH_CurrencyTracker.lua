@@ -1,5 +1,4 @@
 local eventFrame = CreateFrame("Frame")
-local snapshotCreated = false
 
 local function InitialiseDatabase()
     CurrencyTrackerDB = CurrencyTrackerDB or {}
@@ -101,10 +100,6 @@ local function CurrenciesMatch(left, right)
 end
 
 local function CreateSnapshot()
-    if snapshotCreated then
-        return
-    end
-
     InitialiseDatabase()
 
     local characterName = UnitName("player")
@@ -113,8 +108,6 @@ local function CreateSnapshot()
     local currencies, foundCount = ScanCurrencies()
     local latestSnapshot =
         FindLatestSnapshot(characterName, realmName)
-
-    snapshotCreated = true
 
     if latestSnapshot
         and CurrenciesMatch(currencies, latestSnapshot.currencies)
@@ -163,7 +156,6 @@ eventFrame:SetScript("OnEvent", function(_, event)
         InitialiseDatabase()
         ScheduleSnapshot()
     elseif event == "PLAYER_LOGOUT" then
-        snapshotCreated = false
         CreateSnapshot()
     end
 end)
@@ -171,6 +163,5 @@ end)
 SLASH_RSHCURRENCYTRACKER1 = "/currencylog"
 
 SlashCmdList.RSHCURRENCYTRACKER = function()
-    snapshotCreated = false
     CreateSnapshot()
 end
