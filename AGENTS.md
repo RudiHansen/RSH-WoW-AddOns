@@ -61,3 +61,4 @@ For WoW addon files:
 - Do not rename addons, database variables, slash commands, or files without explicitly noting migration consequences.
 - Do not commit generated SavedVariables, logs, backups, or local game data.
 - Summarize changed files and validation performed after completing a task.
+- End with commit message sugestion
