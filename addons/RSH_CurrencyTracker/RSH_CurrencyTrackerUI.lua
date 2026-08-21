@@ -8,10 +8,9 @@ local LIST_ROW_HEIGHT = 26
 local LIST_WIDTH = 205
 local LIST_HEIGHT = 230
 local TABLE_ROW_HEIGHT = 27
-local TABLE_VISIBLE_ROWS = 10
 local DATE_COLUMN_WIDTH = 138
-local CURRENCY_COLUMN_WIDTH = 132
-local TABLE_VIEW_WIDTH = 390
+local MINIMUM_CURRENCY_COLUMN_WIDTH = 105
+local MAXIMUM_CURRENCY_COLUMN_WIDTH = 160
 
 local PERIOD_OPTIONS = {
     { value = "7", label = "Last 7 days" },
@@ -699,7 +698,7 @@ end
 local function CreateOverviewTable(parent)
     local tableFrame = CreateFrame("Frame", nil, parent)
     tableFrame:SetPoint("TOPLEFT", 0, -91)
-    tableFrame:SetSize(DATE_COLUMN_WIDTH + TABLE_VIEW_WIDTH + 18, 310)
+    tableFrame:SetPoint("BOTTOMRIGHT", 0, 0)
 
     local dateHeader = CreateFrame("Frame", nil, tableFrame, "BackdropTemplate")
     dateHeader:SetPoint("TOPLEFT")
@@ -710,21 +709,18 @@ local function CreateOverviewTable(parent)
 
     local headerViewport = CreateFrame("Frame", nil, tableFrame)
     headerViewport:SetPoint("TOPLEFT", dateHeader, "TOPRIGHT", 1, 0)
-    headerViewport:SetSize(TABLE_VIEW_WIDTH, TABLE_ROW_HEIGHT)
+    headerViewport:SetPoint("TOPRIGHT", tableFrame, "TOPRIGHT", -18, 0)
+    headerViewport:SetHeight(TABLE_ROW_HEIGHT)
     headerViewport:SetClipsChildren(true)
 
     local body = CreateFrame("Frame", nil, tableFrame)
     body:SetPoint("TOPLEFT", dateHeader, "BOTTOMLEFT", 0, -1)
-    body:SetSize(DATE_COLUMN_WIDTH + TABLE_VIEW_WIDTH + 1,
-        TABLE_VISIBLE_ROWS * TABLE_ROW_HEIGHT)
+    body:SetPoint("BOTTOMRIGHT", tableFrame, "BOTTOMRIGHT", -18, 20)
     body:SetClipsChildren(true)
 
     local currencyViewport = CreateFrame("Frame", nil, body)
     currencyViewport:SetPoint("TOPLEFT", DATE_COLUMN_WIDTH + 1, 0)
-    currencyViewport:SetSize(
-        TABLE_VIEW_WIDTH,
-        TABLE_VISIBLE_ROWS * TABLE_ROW_HEIGHT
-    )
+    currencyViewport:SetPoint("BOTTOMRIGHT")
     currencyViewport:SetClipsChildren(true)
 
     local verticalSlider = CreateSlider(
@@ -732,14 +728,22 @@ local function CreateOverviewTable(parent)
         "VERTICAL",
         { "TOPLEFT", body, "TOPRIGHT", 3, 0 },
         14,
-        TABLE_VISIBLE_ROWS * TABLE_ROW_HEIGHT
+        100
     )
+    verticalSlider:SetPoint("BOTTOMLEFT", body, "BOTTOMRIGHT", 3, 0)
     local horizontalSlider = CreateSlider(
         tableFrame,
         "HORIZONTAL",
         { "TOPLEFT", currencyViewport, "BOTTOMLEFT", 0, -5 },
-        TABLE_VIEW_WIDTH,
+        100,
         14
+    )
+    horizontalSlider:SetPoint(
+        "TOPRIGHT",
+        currencyViewport,
+        "BOTTOMRIGHT",
+        0,
+        -5
     )
 
     local view = {
@@ -754,6 +758,8 @@ local function CreateOverviewTable(parent)
         headers = {},
         rows = {},
         currencies = {},
+        visibleRows = 0,
+        columnWidth = MINIMUM_CURRENCY_COLUMN_WIDTH,
     }
 
     local function Render()
@@ -762,17 +768,18 @@ local function CreateOverviewTable(parent)
             - math.floor(verticalSlider:GetValue())
             + 1
         local horizontalOffset = horizontalSlider:GetValue()
+        local columnWidth = view.columnWidth
 
         for index, header in ipairs(view.headers) do
             header:ClearAllPoints()
             header:SetPoint(
                 "TOPLEFT",
-                ((index - 1) * CURRENCY_COLUMN_WIDTH) - horizontalOffset,
+                ((index - 1) * columnWidth) - horizontalOffset,
                 0
             )
         end
 
-        for visibleIndex = 1, TABLE_VISIBLE_ROWS do
+        for visibleIndex = 1, view.visibleRows do
             local rowData = view.rows[firstIndex + visibleIndex - 1]
             local dateRow = view.dateRows[visibleIndex]
             local currencyRow = view.currencyRows[visibleIndex]
@@ -786,7 +793,7 @@ local function CreateOverviewTable(parent)
                     cell:ClearAllPoints()
                     cell:SetPoint(
                         "TOPLEFT",
-                        ((columnIndex - 1) * CURRENCY_COLUMN_WIDTH)
+                        ((columnIndex - 1) * columnWidth)
                             - horizontalOffset,
                         0
                     )
@@ -799,45 +806,77 @@ local function CreateOverviewTable(parent)
         end
     end
 
-    for visibleIndex = 1, TABLE_VISIBLE_ROWS do
-        local dateRow = CreateFrame("Frame", nil, body, "BackdropTemplate")
-        dateRow:SetPoint(
-            "TOPLEFT",
-            0,
-            -((visibleIndex - 1) * TABLE_ROW_HEIGHT)
-        )
-        dateRow:SetSize(DATE_COLUMN_WIDTH, TABLE_ROW_HEIGHT - 1)
-        dateRow:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-        dateRow:SetBackdropColor(0.08, 0.08, 0.08, 0.75)
-        dateRow.text = CreateLabel(
-            dateRow,
-            "",
-            { "LEFT", 6, 0 },
-            "GameFontHighlightSmall"
-        )
-        view.dateRows[visibleIndex] = dateRow
+    local function EnsureRows(rowCount)
+        for visibleIndex = #view.dateRows + 1, rowCount do
+            local dateRow = CreateFrame(
+                "Frame",
+                nil,
+                body,
+                "BackdropTemplate"
+            )
+            dateRow:SetPoint(
+                "TOPLEFT",
+                0,
+                -((visibleIndex - 1) * TABLE_ROW_HEIGHT)
+            )
+            dateRow:SetSize(DATE_COLUMN_WIDTH, TABLE_ROW_HEIGHT - 1)
+            dateRow:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8X8",
+            })
+            dateRow:SetBackdropColor(0.08, 0.08, 0.08, 0.75)
+            dateRow.text = CreateLabel(
+                dateRow,
+                "",
+                { "LEFT", 6, 0 },
+                "GameFontHighlightSmall"
+            )
+            view.dateRows[visibleIndex] = dateRow
 
-        local currencyRow = CreateFrame("Frame", nil, currencyViewport)
-        currencyRow:SetPoint(
-            "TOPLEFT",
-            0,
-            -((visibleIndex - 1) * TABLE_ROW_HEIGHT)
-        )
-        currencyRow:SetSize(TABLE_VIEW_WIDTH, TABLE_ROW_HEIGHT - 1)
-        currencyRow.cells = {}
-        view.currencyRows[visibleIndex] = currencyRow
+            local currencyRow = CreateFrame("Frame", nil, currencyViewport)
+            currencyRow:SetPoint(
+                "TOPLEFT",
+                0,
+                -((visibleIndex - 1) * TABLE_ROW_HEIGHT)
+            )
+            currencyRow:SetPoint("RIGHT")
+            currencyRow:SetHeight(TABLE_ROW_HEIGHT - 1)
+            currencyRow.cells = {}
+            view.currencyRows[visibleIndex] = currencyRow
+        end
     end
 
     function view:SetData(rows, currencies)
         self.rows = rows
         self.currencies = currencies
+        local viewportWidth = math.max(
+            MINIMUM_CURRENCY_COLUMN_WIDTH,
+            headerViewport:GetWidth()
+        )
+        self.visibleRows = math.max(
+            1,
+            math.floor(body:GetHeight() / TABLE_ROW_HEIGHT)
+        )
+
+        if #currencies > 0 then
+            self.columnWidth = math.min(
+                MAXIMUM_CURRENCY_COLUMN_WIDTH,
+                math.max(
+                    MINIMUM_CURRENCY_COLUMN_WIDTH,
+                    math.floor(viewportWidth / #currencies)
+                )
+            )
+        else
+            self.columnWidth = MINIMUM_CURRENCY_COLUMN_WIDTH
+        end
+
+        EnsureRows(self.visibleRows)
 
         for index, currency in ipairs(currencies) do
             local header = self.headers[index]
 
             if not header then
                 header = CreateFrame("Button", nil, headerViewport)
-                header:SetSize(CURRENCY_COLUMN_WIDTH - 1, TABLE_ROW_HEIGHT)
+                header:SetHeight(TABLE_ROW_HEIGHT)
                 header.background = header:CreateTexture(nil, "BACKGROUND")
                 header.background:SetAllPoints()
                 header.background:SetColorTexture(0.18, 0.18, 0.18, 1)
@@ -852,6 +891,7 @@ local function CreateOverviewTable(parent)
                 )
                 header.text:SetPoint("RIGHT", -3, 0)
                 header.text:SetJustifyH("LEFT")
+                header.text:SetWordWrap(false)
                 header:SetScript("OnEnter", function(button)
                     GameTooltip:SetOwner(button, "ANCHOR_TOP")
                     GameTooltip:SetText(button.currencyName)
@@ -874,6 +914,7 @@ local function CreateOverviewTable(parent)
                 self.headers[index] = header
             end
 
+            header:SetWidth(self.columnWidth - 1)
             header.currencyID = currency.currencyID
             header.currencyName = currency.name
             header.icon:SetTexture(
@@ -883,7 +924,7 @@ local function CreateOverviewTable(parent)
             header.text:SetText(currency.name)
             header:Show()
 
-            for visibleIndex = 1, TABLE_VISIBLE_ROWS do
+            for visibleIndex = 1, self.visibleRows do
                 local currencyRow = self.currencyRows[visibleIndex]
                 local cell = currencyRow.cells[index]
 
@@ -894,10 +935,7 @@ local function CreateOverviewTable(parent)
                         currencyRow,
                         "BackdropTemplate"
                     )
-                    cell:SetSize(
-                        CURRENCY_COLUMN_WIDTH - 1,
-                        TABLE_ROW_HEIGHT - 1
-                    )
+                    cell:SetHeight(TABLE_ROW_HEIGHT - 1)
                     cell:SetBackdrop({
                         bgFile = "Interface\\Buttons\\WHITE8X8",
                     })
@@ -912,6 +950,7 @@ local function CreateOverviewTable(parent)
                     currencyRow.cells[index] = cell
                 end
 
+                cell:SetWidth(self.columnWidth - 1)
                 cell:Show()
             end
         end
@@ -919,15 +958,24 @@ local function CreateOverviewTable(parent)
         for index = #currencies + 1, #self.headers do
             self.headers[index]:Hide()
 
-            for visibleIndex = 1, TABLE_VISIBLE_ROWS do
-                self.currencyRows[visibleIndex].cells[index]:Hide()
+            for visibleIndex = 1, self.visibleRows do
+                local cell = self.currencyRows[visibleIndex].cells[index]
+
+                if cell then
+                    cell:Hide()
+                end
             end
         end
 
-        local maximumVertical = math.max(0, #rows - TABLE_VISIBLE_ROWS)
+        for visibleIndex = self.visibleRows + 1, #self.dateRows do
+            self.dateRows[visibleIndex]:Hide()
+            self.currencyRows[visibleIndex]:Hide()
+        end
+
+        local maximumVertical = math.max(0, #rows - self.visibleRows)
         local maximumHorizontal = math.max(
             0,
-            (#currencies * CURRENCY_COLUMN_WIDTH) - TABLE_VIEW_WIDTH
+            (#currencies * self.columnWidth) - viewportWidth
         )
         verticalSlider:SetMinMaxValues(0, maximumVertical)
         horizontalSlider:SetMinMaxValues(0, maximumHorizontal)
@@ -947,6 +995,11 @@ local function CreateOverviewTable(parent)
         local minimum, maximum = verticalSlider:GetMinMaxValues()
         local value = verticalSlider:GetValue() + delta
         verticalSlider:SetValue(math.max(minimum, math.min(maximum, value)))
+    end)
+    tableFrame:SetScript("OnSizeChanged", function()
+        if #view.rows > 0 or #view.currencies > 0 then
+            view:SetData(view.rows, view.currencies)
+        end
     end)
 
     return view

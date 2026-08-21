@@ -1,8 +1,10 @@
 local RSH = _G.RSH or {}
 _G.RSH = RSH
 
-local WINDOW_WIDTH = 760
-local WINDOW_HEIGHT = 500
+local DEFAULT_WINDOW_WIDTH = 820
+local DEFAULT_WINDOW_HEIGHT = 600
+local MINIMUM_WINDOW_WIDTH = 760
+local MINIMUM_WINDOW_HEIGHT = 500
 local NAVIGATION_WIDTH = 150
 local pages = {}
 local pageByID = {}
@@ -13,6 +15,7 @@ local selectedPageID
 
 RSHDB = RSHDB or {}
 RSHDB.minimap = RSHDB.minimap or {}
+RSHDB.window = RSHDB.window or {}
 
 if RSHDB.minimapButtonAngle then
     if not RSHDB.minimap.minimapPos then
@@ -126,11 +129,38 @@ local function CreateMainFrame()
         UIParent,
         "BackdropTemplate"
     )
-    mainFrame:SetSize(WINDOW_WIDTH, WINDOW_HEIGHT)
+    local maximumWidth = math.max(
+        MINIMUM_WINDOW_WIDTH,
+        UIParent:GetWidth() - 40
+    )
+    local maximumHeight = math.max(
+        MINIMUM_WINDOW_HEIGHT,
+        UIParent:GetHeight() - 40
+    )
+    local savedWidth = tonumber(RSHDB.window.width)
+        or DEFAULT_WINDOW_WIDTH
+    local savedHeight = tonumber(RSHDB.window.height)
+        or DEFAULT_WINDOW_HEIGHT
+    local windowWidth = math.max(
+        MINIMUM_WINDOW_WIDTH,
+        math.min(maximumWidth, savedWidth)
+    )
+    local windowHeight = math.max(
+        MINIMUM_WINDOW_HEIGHT,
+        math.min(maximumHeight, savedHeight)
+    )
+    mainFrame:SetSize(windowWidth, windowHeight)
+    mainFrame:SetResizeBounds(
+        MINIMUM_WINDOW_WIDTH,
+        MINIMUM_WINDOW_HEIGHT,
+        maximumWidth,
+        maximumHeight
+    )
     mainFrame:SetPoint("CENTER")
     mainFrame:SetFrameStrata("DIALOG")
     mainFrame:SetClampedToScreen(true)
     mainFrame:SetMovable(true)
+    mainFrame:SetResizable(true)
     mainFrame:EnableMouse(true)
     mainFrame:RegisterForDrag("LeftButton")
     mainFrame:SetScript("OnDragStart", mainFrame.StartMoving)
@@ -159,6 +189,31 @@ local function CreateMainFrame()
         "UIPanelCloseButton"
     )
     closeButton:SetPoint("TOPRIGHT", -5, -5)
+
+    local resizeButton = CreateFrame("Button", nil, mainFrame)
+    resizeButton:SetSize(20, 20)
+    resizeButton:SetPoint("BOTTOMRIGHT", -7, 7)
+    resizeButton:SetNormalTexture(
+        "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up"
+    )
+    resizeButton:SetHighlightTexture(
+        "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight"
+    )
+    resizeButton:SetPushedTexture(
+        "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down"
+    )
+    resizeButton:SetScript("OnMouseDown", function(_, button)
+        if button == "LeftButton" then
+            mainFrame:StartSizing("BOTTOMRIGHT")
+        end
+    end)
+    resizeButton:SetScript("OnMouseUp", function(_, button)
+        if button == "LeftButton" then
+            mainFrame:StopMovingOrSizing()
+            RSHDB.window.width = math.floor(mainFrame:GetWidth() + 0.5)
+            RSHDB.window.height = math.floor(mainFrame:GetHeight() + 0.5)
+        end
+    end)
 
     local navigation = CreateFrame(
         "Frame",
