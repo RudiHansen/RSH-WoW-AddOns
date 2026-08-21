@@ -4,6 +4,8 @@ local function InitialiseDatabase()
     CurrencyTrackerDB = CurrencyTrackerDB or {}
     CurrencyTrackerDB.version = 2
     CurrencyTrackerDB.entries = CurrencyTrackerDB.entries or {}
+    CurrencyTrackerDB.displayedCurrencyIds =
+        CurrencyTrackerDB.displayedCurrencyIds or {}
 end
 
 local function ScanCurrencies()
