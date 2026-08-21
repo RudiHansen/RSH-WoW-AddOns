@@ -5,7 +5,7 @@ A collection of personal World of Warcraft addons and related tools.
 The project currently contains two small addons:
 
 - **RSH Enable Chat Log**  
-  Automatically enables WoW chat logging when a character logs in.
+  Controls account-wide WoW chat logging from the shared RSH interface.
 
 - **RSH Currency Tracker**  
   Tracks selected currencies and stores snapshots in SavedVariables.

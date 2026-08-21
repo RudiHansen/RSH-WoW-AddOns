@@ -1,7 +1,19 @@
-local f = CreateFrame("Frame")
-f:RegisterEvent("PLAYER_LOGIN")
+local eventFrame = CreateFrame("Frame")
 
-f:SetScript("OnEvent", function()
-    LoggingChat(true)
-    print("|cff00ff00Chat logging enabled.|r")
+local function InitialiseDatabase()
+    RSHChatLogDB = RSHChatLogDB or {}
+
+    if RSHChatLogDB.enabled == nil then
+        RSHChatLogDB.enabled = true
+    end
+end
+
+local function ApplySetting()
+    InitialiseDatabase()
+    LoggingChat(RSHChatLogDB.enabled)
+end
+
+eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:SetScript("OnEvent", function()
+    ApplySetting()
 end)
