@@ -123,6 +123,9 @@ local function CreateMainFrame()
         return
     end
 
+    RSHDB = RSHDB or {}
+    RSHDB.window = RSHDB.window or {}
+
     mainFrame = CreateFrame(
         "Frame",
         "RSHMainFrame",
