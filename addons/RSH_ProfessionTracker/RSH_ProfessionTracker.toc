@@ -4,5 +4,7 @@
 ## Author: Rudi
 ## Version: 2.1.1
 ## SavedVariables: RSHProfessionTrackerDB
+## OptionalDeps: RSH
 
 RSH_ProfessionTracker.lua
+RSH_ProfessionTrackerUI.lua
