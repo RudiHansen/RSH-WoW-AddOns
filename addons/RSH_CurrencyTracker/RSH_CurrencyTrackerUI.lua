@@ -580,6 +580,10 @@ local function GetGroupKeyAndLabel(timestamp, grouping)
     end
 end
 
+local function QuantitiesDiffer(quantity, previousQuantity)
+    return quantity ~= previousQuantity
+end
+
 local function BuildOverviewRows(entries, period, grouping, currencyIDs)
     local rows = {}
 
@@ -588,6 +592,7 @@ local function BuildOverviewRows(entries, period, grouping, currencyIDs)
             if EntryMatchesPeriod(entry, period) then
                 local previous = entries[index - 1]
                 local values = {}
+                local hasSelectedCurrencyChange = false
 
                 for _, currencyID in ipairs(currencyIDs) do
                     local quantity = GetCurrencyQuantity(entry, currencyID)
@@ -601,13 +606,22 @@ local function BuildOverviewRows(entries, period, grouping, currencyIDs)
                         delta = quantity - previousQuantity
                     end
 
+                    if QuantitiesDiffer(quantity, previousQuantity) then
+                        hasSelectedCurrencyChange = true
+                    end
+
                     table.insert(values, FormatQuantity(quantity, delta))
                 end
 
-                table.insert(rows, {
-                    label = date("%d-%m-%Y  %H:%M", GetTimestamp(entry)),
-                    values = values,
-                })
+                if #rows == 0 or hasSelectedCurrencyChange then
+                    table.insert(rows, {
+                        label = date(
+                            "%d-%m-%Y  %H:%M",
+                            GetTimestamp(entry)
+                        ),
+                        values = values,
+                    })
+                end
             end
         end
 
@@ -643,6 +657,7 @@ local function BuildOverviewRows(entries, period, grouping, currencyIDs)
         local lastEntry = entries[group.lastIndex]
         local previousEntry = entries[group.firstIndex - 1]
         local values = {}
+        local hasSelectedCurrencyChange = false
 
         for _, currencyID in ipairs(currencyIDs) do
             local quantity = GetCurrencyQuantity(lastEntry, currencyID)
@@ -656,10 +671,16 @@ local function BuildOverviewRows(entries, period, grouping, currencyIDs)
                 delta = quantity - previousQuantity
             end
 
+            if QuantitiesDiffer(quantity, previousQuantity) then
+                hasSelectedCurrencyChange = true
+            end
+
             table.insert(values, FormatQuantity(quantity, delta))
         end
 
-        table.insert(rows, { label = group.label, values = values })
+        if #rows == 0 or hasSelectedCurrencyChange then
+            table.insert(rows, { label = group.label, values = values })
+        end
     end
 
     return rows
