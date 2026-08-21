@@ -4,5 +4,7 @@
 ## Author: Rudi
 ## Version: 1.1.0
 ## SavedVariables: RSHFishingTrackerDB
+## OptionalDeps: RSH
 
 RSH_FishingTracker.lua
+RSH_FishingTrackerUI.lua
