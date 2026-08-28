@@ -1,7 +1,10 @@
 local addonName = ...
 local eventFrame = CreateFrame("Frame")
-local DATABASE_VERSION = 1
+local DATABASE_VERSION = 2
 local DUNDUN_CURRENCY_ID = 3376
+local LEGACY_ZONE_MAP_ID = 2395
+local LEGACY_ZONE_NAME = "Eversong Woods"
+local UNKNOWN_LOCATION_KEY = "unknown"
 local FISHING_SKILL_LINE_ID = 356
 local FISHING_SPELL_IDS = {
     [7620] = true,
@@ -24,9 +27,48 @@ end
 
 local function InitialiseDatabase()
     RSHFishingTrackerDB = RSHFishingTrackerDB or {}
-    RSHFishingTrackerDB.version = DATABASE_VERSION
     RSHFishingTrackerDB.characters =
         RSHFishingTrackerDB.characters or {}
+
+    if (tonumber(RSHFishingTrackerDB.version) or 1) < 2 then
+        for _, realmCharacters in pairs(RSHFishingTrackerDB.characters) do
+            for _, record in pairs(realmCharacters) do
+                record.locations = record.locations or {}
+
+                if not record.locations[LEGACY_ZONE_MAP_ID] then
+                    local legacyLocation = {
+                        mapID = LEGACY_ZONE_MAP_ID,
+                        name = LEGACY_ZONE_NAME,
+                        attempts = tonumber(record.attempts) or 0,
+                        catches = tonumber(record.catches) or 0,
+                        dundun = tonumber(record.dundun) or 0,
+                        loot = {},
+                        lastCatch = record.lastCatch and {
+                            timestamp = record.lastCatch.timestamp,
+                            mapID = LEGACY_ZONE_MAP_ID,
+                            zoneMapID = LEGACY_ZONE_MAP_ID,
+                            fishingSkill = record.lastCatch.fishingSkill,
+                        },
+                        lastFishingSkill = record.lastFishingSkill,
+                    }
+
+                    for key, lootRecord in pairs(record.loot or {}) do
+                        legacyLocation.loot[key] = {
+                            kind = lootRecord.kind,
+                            id = lootRecord.id,
+                            name = lootRecord.name,
+                            quantity = tonumber(lootRecord.quantity) or 0,
+                            catches = tonumber(lootRecord.catches) or 0,
+                        }
+                    end
+
+                    record.locations[LEGACY_ZONE_MAP_ID] = legacyLocation
+                end
+            end
+        end
+    end
+
+    RSHFishingTrackerDB.version = DATABASE_VERSION
 end
 
 local function GetCharacterRecord()
@@ -51,6 +93,7 @@ local function GetCharacterRecord()
             catches = 0,
             dundun = 0,
             loot = {},
+            locations = {},
         }
         realmCharacters[characterName] = record
     end
@@ -59,8 +102,53 @@ local function GetCharacterRecord()
     record.catches = record.catches or 0
     record.dundun = record.dundun or 0
     record.loot = record.loot or {}
+    record.locations = record.locations or {}
 
     return record
+end
+
+local function GetFishingLocation()
+    local mapID = C_Map.GetBestMapForUnit("player")
+    local exactMapID = mapID
+
+    while mapID do
+        local mapInfo = C_Map.GetMapInfo(mapID)
+
+        if not mapInfo then
+            break
+        end
+
+        if mapInfo.mapType == Enum.UIMapType.Zone then
+            return mapID, mapInfo.name, exactMapID
+        end
+
+        mapID = mapInfo.parentMapID
+    end
+
+    return UNKNOWN_LOCATION_KEY, "Unknown location", exactMapID
+end
+
+local function GetLocationRecord(locationKey, locationName)
+    local locationRecord = characterRecord.locations[locationKey]
+
+    if not locationRecord then
+        locationRecord = {
+            mapID = type(locationKey) == "number" and locationKey or nil,
+            name = locationName,
+            attempts = 0,
+            catches = 0,
+            dundun = 0,
+            loot = {},
+        }
+        characterRecord.locations[locationKey] = locationRecord
+    end
+
+    locationRecord.name = locationName or locationRecord.name
+    locationRecord.attempts = locationRecord.attempts or 0
+    locationRecord.catches = locationRecord.catches or 0
+    locationRecord.dundun = locationRecord.dundun or 0
+    locationRecord.loot = locationRecord.loot or {}
+    return locationRecord
 end
 
 local function GetCurrencyQuantity(currencyID)
@@ -104,9 +192,9 @@ local function FormatRate(drops, catches)
     return string.format("%.2f%%", drops * 100 / catches)
 end
 
-local function RecordLoot(kind, id, name, quantity, countCatch)
+local function RecordLootIn(record, kind, id, name, quantity, countCatch)
     local key = kind .. ":" .. id
-    local lootRecord = characterRecord.loot[key]
+    local lootRecord = record.loot[key]
 
     if not lootRecord then
         lootRecord = {
@@ -116,7 +204,7 @@ local function RecordLoot(kind, id, name, quantity, countCatch)
             quantity = 0,
             catches = 0,
         }
-        characterRecord.loot[key] = lootRecord
+        record.loot[key] = lootRecord
     end
 
     lootRecord.name = name or lootRecord.name
@@ -126,6 +214,18 @@ local function RecordLoot(kind, id, name, quantity, countCatch)
     if countCatch then
         lootRecord.catches = lootRecord.catches + 1
     end
+end
+
+local function RecordLoot(kind, id, name, quantity, countCatch)
+    RecordLootIn(characterRecord, kind, id, name, quantity, countCatch)
+    RecordLootIn(
+        pendingCast.location,
+        kind,
+        id,
+        name,
+        quantity,
+        countCatch
+    )
 end
 
 local function AnnounceDundun(quantity)
@@ -156,6 +256,8 @@ local function RecordDundun(quantity)
     pendingCast.dundunRecorded =
         pendingCast.dundunRecorded + unrecordedQuantity
     characterRecord.dundun = characterRecord.dundun + unrecordedQuantity
+    pendingCast.location.dundun = pendingCast.location.dundun
+        + unrecordedQuantity
     session.dundun = session.dundun + unrecordedQuantity
 
     local currencyInfo = C_CurrencyInfo.GetCurrencyInfo(DUNDUN_CURRENCY_ID)
@@ -176,6 +278,7 @@ local function ReadLoot()
 
     pendingCast.caught = true
     characterRecord.catches = characterRecord.catches + 1
+    pendingCast.location.catches = pendingCast.location.catches + 1
     session.catches = session.catches + 1
 
     local fishingSkill = GetFishingSkill()
@@ -186,9 +289,12 @@ local function ReadLoot()
 
     characterRecord.lastCatch = {
         timestamp = GetServerTime(),
-        mapID = C_Map.GetBestMapForUnit("player"),
+        mapID = pendingCast.exactMapID,
+        zoneMapID = pendingCast.location.mapID,
         fishingSkill = fishingSkill,
     }
+    pendingCast.location.lastCatch = characterRecord.lastCatch
+    pendingCast.location.lastFishingSkill = fishingSkill
 
     local recordedLoot = {}
 
@@ -272,13 +378,18 @@ local function StartFishingCast(castGUID)
 
     lastFishingCastGUID = castGUID
     lastFishingAttemptAt = currentTime
+    local locationKey, locationName, exactMapID = GetFishingLocation()
+    local locationRecord = GetLocationRecord(locationKey, locationName)
     characterRecord.attempts = characterRecord.attempts + 1
+    locationRecord.attempts = locationRecord.attempts + 1
     session.attempts = session.attempts + 1
     pendingCast = {
         startedAt = GetTime(),
         dundunBefore = GetCurrencyQuantity(DUNDUN_CURRENCY_ID),
         dundunRecorded = 0,
         caught = false,
+        exactMapID = exactMapID,
+        location = locationRecord,
     }
 
     C_Timer.After(45, function()

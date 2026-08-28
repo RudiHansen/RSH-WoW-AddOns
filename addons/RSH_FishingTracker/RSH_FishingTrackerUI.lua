@@ -6,6 +6,7 @@ end
 
 local DUNDUN_CURRENCY_ID = 3376
 local ALL_CHARACTERS = "__all"
+local ALL_LOCATIONS = "__all_locations"
 local SUMMARY_CARD_COUNT = 4
 local SUMMARY_CARD_GAP = 6
 local LOOT_ROW_HEIGHT = 28
@@ -100,7 +101,7 @@ local function MergeRecord(summary, record)
     end
 end
 
-local function BuildSummary(selectedCharacter)
+local function BuildSummary(selectedCharacter, selectedLocation)
     local summary = {
         attempts = 0,
         catches = 0,
@@ -113,7 +114,17 @@ local function BuildSummary(selectedCharacter)
         if selectedCharacter == ALL_CHARACTERS
             or characterRecord.name == selectedCharacter
         then
-            MergeRecord(summary, characterRecord.record)
+            local record = characterRecord.record
+
+            if selectedLocation == ALL_LOCATIONS then
+                MergeRecord(summary, record)
+            elseif type(record.locations) == "table" then
+                local locationRecord = record.locations[selectedLocation]
+
+                if locationRecord then
+                    MergeRecord(summary, locationRecord)
+                end
+            end
         end
     end
 
@@ -425,7 +436,9 @@ local function CreateFishingPage(parent)
     InitialiseDatabase()
     local page = CreateFrame("Frame", nil, parent)
     local selectedCharacter
+    local selectedLocation = ALL_LOCATIONS
     local characterOptions = {}
+    local locationOptions = {}
     local sortKey = "catches"
     local sortDescending = true
     local currentSummary
@@ -439,8 +452,12 @@ local function CreateFishingPage(parent)
     CreateLabel(page, "Character", {
         "TOPLEFT", title, "BOTTOMLEFT", 0, -12,
     })
+    CreateLabel(page, "Zone", {
+        "TOPLEFT", title, "BOTTOMLEFT", 210, -12,
+    })
 
     local characterDropdown
+    local locationDropdown
     local lootTable
     local emptyMessage = CreateLabel(
         page,
@@ -572,7 +589,7 @@ local function CreateFishingPage(parent)
 
     local function RefreshSummary()
         currentSummary = selectedCharacter
-            and BuildSummary(selectedCharacter)
+            and BuildSummary(selectedCharacter, selectedLocation)
 
         if not currentSummary then
             emptyMessage:Show()
@@ -660,6 +677,19 @@ local function CreateFishingPage(parent)
         end,
         function(value)
             selectedCharacter = value
+            page:Refresh()
+        end
+    )
+
+    locationDropdown = CreateDropdown(
+        page,
+        165,
+        { "TOPLEFT", 194, -42 },
+        function()
+            return locationOptions
+        end,
+        function(value)
+            selectedLocation = value
             RefreshSummary()
         end
     )
@@ -717,6 +747,64 @@ local function CreateFishingPage(parent)
         characterDropdown:SetSelectedValue(
             selectedCharacter,
             selectedLabel
+        )
+
+        local locations = {}
+
+        for _, characterRecord in ipairs(records) do
+            if selectedCharacter == ALL_CHARACTERS
+                or characterRecord.name == selectedCharacter
+            then
+                for key, locationRecord in pairs(
+                    characterRecord.record.locations or {}
+                ) do
+                    if HasFishingData(locationRecord) then
+                        locations[key] = locationRecord.name
+                            or (locationRecord.mapID
+                                and C_Map.GetMapInfo(locationRecord.mapID)
+                                and C_Map.GetMapInfo(locationRecord.mapID).name)
+                            or "Unknown location"
+                    end
+                end
+            end
+        end
+
+        local locationKeys = {}
+
+        for key in pairs(locations) do
+            table.insert(locationKeys, key)
+        end
+
+        table.sort(locationKeys, function(left, right)
+            return string.lower(locations[left])
+                < string.lower(locations[right])
+        end)
+        locationOptions = {
+            { value = ALL_LOCATIONS, label = "All zones" },
+        }
+
+        for _, key in ipairs(locationKeys) do
+            table.insert(locationOptions, {
+                value = key,
+                label = locations[key],
+            })
+        end
+
+        local selectedLocationExists = selectedLocation == ALL_LOCATIONS
+
+        if not selectedLocationExists then
+            selectedLocationExists = locations[selectedLocation] ~= nil
+        end
+
+        if not selectedLocationExists then
+            selectedLocation = ALL_LOCATIONS
+        end
+
+        locationDropdown:SetSelectedValue(
+            selectedLocation,
+            selectedLocation == ALL_LOCATIONS
+                and "All zones"
+                or locations[selectedLocation]
         )
         RefreshSummary()
     end

@@ -2,7 +2,7 @@
 ## Title: RSH - Fishing Tracker
 ## Notes: Tracks fishing attempts, catches, loot, skill, and Shard of Dundun drop rates
 ## Author: Rudi
-## Version: 1.1.0
+## Version: 1.2.0
 ## SavedVariables: RSHFishingTrackerDB
 ## OptionalDeps: RSH
 
