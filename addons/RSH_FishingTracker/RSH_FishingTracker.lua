@@ -25,6 +25,14 @@ local function PrintMessage(message)
     print("|cff33aaffRSH Fishing Tracker:|r " .. message)
 end
 
+local function NotifyDataChanged()
+    local RSH = _G.RSH
+
+    if RSH and RSH.NotifyFishingTrackerChanged then
+        RSH:NotifyFishingTrackerChanged()
+    end
+end
+
 local function InitialiseDatabase()
     RSHFishingTrackerDB = RSHFishingTrackerDB or {}
     RSHFishingTrackerDB.characters =
@@ -269,6 +277,7 @@ local function RecordDundun(quantity)
         isFirstDundunRecord
     )
     AnnounceDundun(unrecordedQuantity)
+    NotifyDataChanged()
 end
 
 local function ReadLoot()
@@ -334,6 +343,8 @@ local function ReadLoot()
             end
         end
     end
+
+    NotifyDataChanged()
 end
 
 local function CheckDundunCurrency(cast)
@@ -391,6 +402,7 @@ local function StartFishingCast(castGUID)
         exactMapID = exactMapID,
         location = locationRecord,
     }
+    NotifyDataChanged()
 
     C_Timer.After(45, function()
         if pendingCast

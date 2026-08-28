@@ -10,6 +10,28 @@ local ALL_LOCATIONS = "__all_locations"
 local SUMMARY_CARD_COUNT = 4
 local SUMMARY_CARD_GAP = 6
 local LOOT_ROW_HEIGHT = 28
+local REFRESH_DELAY_SECONDS = 0.2
+local fishingPage
+local refreshScheduled = false
+
+function RSH:NotifyFishingTrackerChanged()
+    if not fishingPage
+        or not fishingPage:IsVisible()
+        or refreshScheduled
+    then
+        return
+    end
+
+    refreshScheduled = true
+
+    C_Timer.After(REFRESH_DELAY_SECONDS, function()
+        refreshScheduled = false
+
+        if fishingPage:IsVisible() then
+            fishingPage:Refresh()
+        end
+    end)
+end
 
 local function InitialiseDatabase()
     RSHFishingTrackerDB = RSHFishingTrackerDB or {}
@@ -820,6 +842,7 @@ local function CreateFishingPage(parent)
     end)
 
     page:Refresh()
+    fishingPage = page
     return page
 end
 
