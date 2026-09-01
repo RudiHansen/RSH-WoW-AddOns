@@ -295,7 +295,57 @@ local function AddCandidate(candidates, seenSpellIDs, spellID, relationship)
     end
 end
 
-function addon:ApplyAbilityCoverage(abilities, actionSpellIDs)
+local FIXED_PAGE_SYSTEMS = {
+    [3] = 4,
+    [4] = 5,
+    [5] = 3,
+    [6] = 2,
+    [13] = 6,
+    [14] = 7,
+    [15] = 8,
+}
+
+local function CollectCurrentActionSpellIDs(actionPages, editMode)
+    local enabledSystems = {}
+    local currentSpellIDs = {}
+
+    for _, bar in ipairs(editMode.bars or {}) do
+        if bar.configuredEnabled then
+            enabledSystems[bar.systemIndex] = true
+        end
+    end
+
+    for _, page in ipairs(actionPages) do
+        local fixedSystem = FIXED_PAGE_SYSTEMS[page.page]
+        local isCurrent = page.active
+            or fixedSystem and enabledSystems[fixedSystem]
+
+        if isCurrent then
+            for _, entry in ipairs(page.actions) do
+                local action = entry.action
+
+                if action and action.type == "spell" and action.spellID then
+                    currentSpellIDs[action.spellID] = true
+                end
+            end
+        end
+    end
+
+    return currentSpellIDs
+end
+
+function addon:ApplyAbilityCoverage(
+    abilities,
+    actionSpellIDs,
+    actionPages,
+    actionState,
+    editMode
+)
+    local currentActionSpellIDs = CollectCurrentActionSpellIDs(
+        actionPages,
+        editMode
+    )
+
     for _, ability in ipairs(abilities) do
         local candidates = {}
         local seenSpellIDs = {}
@@ -365,14 +415,60 @@ function addon:ApplyAbilityCoverage(abilities, actionSpellIDs)
             or ability.baseSpellID ~= nil
 
         ability.covered = false
+        ability.currentStateCovered = false
 
         for _, candidate in ipairs(candidates) do
-            if actionSpellIDs[candidate.spellID] then
+            if not ability.covered and actionSpellIDs[candidate.spellID] then
                 ability.covered = true
                 ability.coveredBySpellID = candidate.spellID
                 ability.coveredByRelationship = candidate.relationship
-                break
             end
+
+            if not ability.currentStateCovered
+                and currentActionSpellIDs[candidate.spellID]
+            then
+                ability.currentStateCovered = true
+                ability.currentStateCoveredBySpellID = candidate.spellID
+                ability.currentStateCoveredByRelationship =
+                    candidate.relationship
+            end
+
+            for _, form in ipairs(actionState.shapeshiftForms or {}) do
+                if form.spellID == candidate.spellID then
+                    ability.otherControlCoverage = form.name
+                        and ("Shapeshift bar: " .. form.name)
+                        or ("Shapeshift bar form index " .. form.index)
+                    ability.otherControlActive = form.active == true
+                end
+            end
+        end
+
+        if C_Spell and C_Spell.IsSpellUsable then
+            ability.usableInCurrentState = self:SafeCall(
+                C_Spell.IsSpellUsable,
+                ability.spellID
+            )
+        end
+
+        if ability.covered and not ability.currentStateCovered then
+            ability.stateCoverageNote =
+                "Only found on an inactive/alternate underlying page"
+        elseif not ability.covered and ability.otherControlCoverage then
+            ability.stateCoverageNote =
+                "Available through another Blizzard action control"
+        elseif not ability.covered
+            and actionState.shapeshiftForm
+            and actionState.shapeshiftForm > 0
+            and ability.usableInCurrentState == false
+        then
+            ability.stateCoverageNote =
+                "Not usable in the current form; may be form/state-dependent"
+        elseif not ability.covered and ability.usableInCurrentState == true then
+            ability.stateCoverageNote =
+                "Usable in the current state, but no direct action slot was found"
+        elseif not ability.covered then
+            ability.stateCoverageNote =
+                "Form/state dependency could not be established"
         end
     end
 end

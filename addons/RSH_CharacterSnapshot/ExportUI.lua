@@ -4,7 +4,7 @@ local exportFrame
 local sharedPage
 
 local function Populate(editBox)
-    local text = addon:GenerateSnapshot()
+    local text = addon:GenerateSnapshot(addon:IsDebugEnabled())
     editBox:SetText(text)
     editBox:SetCursorPosition(0)
 end
@@ -20,6 +20,36 @@ local function CreateExportContent(parent, standaloneWindow)
     local hint = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     hint:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
     hint:SetText("Press Ctrl+A and Ctrl+C to copy")
+
+    local debugCheckbox = CreateFrame(
+        "CheckButton",
+        nil,
+        content,
+        "UICheckButtonTemplate"
+    )
+    debugCheckbox:SetSize(24, 24)
+    debugCheckbox:SetPoint("LEFT", hint, "RIGHT", 14, 0)
+    local debugLabel = debugCheckbox:CreateFontString(
+        nil,
+        "OVERLAY",
+        "GameFontNormalSmall"
+    )
+    debugLabel:SetPoint("LEFT", debugCheckbox, "RIGHT", 2, 0)
+    debugLabel:SetText("Debug")
+    debugCheckbox:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Debug")
+        GameTooltip:AddLine(
+            "Include empty/unknown action pages and additional "
+                .. "diagnostic API data.",
+            1,
+            1,
+            1,
+            true
+        )
+        GameTooltip:Show()
+    end)
+    debugCheckbox:SetScript("OnLeave", GameTooltip_Hide)
 
     local refreshButton = CreateFrame(
         "Button",
@@ -89,6 +119,10 @@ local function CreateExportContent(parent, standaloneWindow)
         editBox:SetFocus()
         editBox:HighlightText()
     end)
+    debugCheckbox:SetScript("OnClick", function(self)
+        addon:SetDebugEnabled(self:GetChecked() == true)
+        Populate(editBox)
+    end)
     closeButton:SetScript("OnClick", function()
         if standaloneWindow then
             standaloneWindow:Hide()
@@ -100,6 +134,7 @@ local function CreateExportContent(parent, standaloneWindow)
     end)
 
     function content:Refresh()
+        debugCheckbox:SetChecked(addon:IsDebugEnabled())
         Populate(editBox)
     end
 

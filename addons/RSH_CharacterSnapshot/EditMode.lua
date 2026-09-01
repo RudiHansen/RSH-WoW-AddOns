@@ -186,6 +186,22 @@ function addon:CollectEditModeActionBars()
                     bar.buttonCount = setting.value
                 elseif setting.name == "Rows" then
                     bar.rowCount = setting.value
+                elseif setting.name == "Orientation" then
+                    bar.orientation = setting.decodedValue or setting.value
+                elseif setting.name == "Icon size" then
+                    bar.iconSize = setting.value
+                elseif setting.name == "Icon padding" then
+                    bar.iconPadding = setting.value
+                end
+
+                local lowerName = string.lower(setting.name)
+
+                if string.find(lowerName, "visibility", 1, true)
+                    or string.find(lowerName, "hide", 1, true)
+                    or string.find(lowerName, "show", 1, true)
+                then
+                    bar.visibilitySettings = bar.visibilitySettings or {}
+                    table.insert(bar.visibilitySettings, setting)
                 end
             end
 

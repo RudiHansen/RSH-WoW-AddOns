@@ -37,6 +37,8 @@ local function FormatAction(action)
         table.insert(parts, "EquipmentSetID " .. addon:SafeString(action.equipmentSetID))
     elseif action.flyoutID then
         table.insert(parts, "FlyoutID " .. addon:SafeString(action.flyoutID))
+    elseif action.mountID then
+        table.insert(parts, "MountID " .. addon:SafeString(action.mountID))
     elseif action.id ~= nil then
         table.insert(parts, "ID " .. addon:SafeString(action.id))
     end
@@ -79,6 +81,8 @@ local function AddActionState(lines, state)
     AddField(lines, "Multi-cast page", state.multiCastPage)
     AddField(lines, "Possess bar visible", YesNo(state.possessVisible))
     AddField(lines, "Current shapeshift form index", state.shapeshiftForm)
+    AddField(lines, "Current shapeshift form", state.shapeshiftFormName)
+    AddField(lines, "Current shapeshift spell ID", state.shapeshiftFormSpellID)
     AddField(lines, "Mounted", YesNo(state.mounted))
     table.insert(lines, "")
 end
@@ -176,6 +180,20 @@ local function AddAbilities(lines, abilities)
             end
 
             table.insert(
+                parts,
+                "Current-state direct coverage: "
+                    .. (ability.currentStateCovered and "Yes" or "No")
+            )
+
+            if ability.otherControlCoverage then
+                table.insert(parts, ability.otherControlCoverage)
+            end
+
+            if ability.stateCoverageNote then
+                table.insert(parts, "State note: " .. ability.stateCoverageNote)
+            end
+
+            table.insert(
                 lines,
                 table.concat(parts, " | ")
             )
@@ -185,7 +203,7 @@ local function AddAbilities(lines, abilities)
     table.insert(lines, "")
 end
 
-local function AddEditMode(lines, editMode)
+local function AddEditMode(lines, editMode, debugEnabled)
     table.insert(lines, "[BLIZZARD ACTION BAR LAYOUT]")
     AddField(lines, "Active layout index", editMode.activeLayout)
     AddField(lines, "Layout name", editMode.layoutName)
@@ -209,92 +227,156 @@ local function AddEditMode(lines, editMode)
     end
 
     for _, bar in ipairs(editMode.bars) do
-        table.insert(lines, "")
-        table.insert(
-            lines,
-            "Bar system " .. addon:SafeString(bar.systemIndex)
-                .. " | Frame " .. addon:SafeString(bar.frameName)
-        )
-        table.insert(lines, "Runtime shown: " .. YesNo(bar.runtimeShown))
-        table.insert(lines, "Runtime visible: " .. YesNo(bar.runtimeVisible))
-        table.insert(
-            lines,
-            "Configured/enabled: " .. YesNo(bar.configuredEnabled)
-        )
-        AddField(lines, "Runtime effective scale", bar.runtimeScale)
-        AddField(lines, "Configured buttons", bar.buttonCount)
-        AddField(lines, "Configured rows", bar.rowCount)
-        AddField(lines, "Derived columns", bar.columnCount)
+        local includeBar = debugEnabled
+            or bar.configuredEnabled ~= false
 
-        if bar.anchor then
+        if includeBar then
+            table.insert(lines, "")
             table.insert(
                 lines,
-                "Anchor: " .. addon:SafeString(bar.anchor.point)
-                    .. " -> " .. addon:SafeString(bar.anchor.relativeTo)
-                    .. " / " .. addon:SafeString(bar.anchor.relativePoint)
-                    .. " | X " .. addon:SafeString(bar.anchor.offsetX)
-                    .. " | Y " .. addon:SafeString(bar.anchor.offsetY)
+                "Bar system " .. addon:SafeString(bar.systemIndex)
+                    .. " | Frame " .. addon:SafeString(bar.frameName)
             )
-        else
-            table.insert(lines, "Anchor: Unavailable")
-        end
-
-        for _, setting in ipairs(bar.settings) do
+            table.insert(lines, "Runtime shown: " .. YesNo(bar.runtimeShown))
+            table.insert(lines, "Runtime visible: " .. YesNo(bar.runtimeVisible))
             table.insert(
                 lines,
-                "Setting: " .. setting.name
-                    .. " | ID " .. addon:SafeString(setting.id)
-                    .. " | Value " .. addon:SafeString(setting.value)
-                    .. (setting.decodedValue
-                        and " (" .. setting.decodedValue .. ")"
-                        or "")
+                "Configured/enabled: " .. YesNo(bar.configuredEnabled)
             )
+            AddField(lines, "Runtime effective scale", bar.runtimeScale)
+            AddField(lines, "Configured buttons", bar.buttonCount)
+            AddField(lines, "Configured rows", bar.rowCount)
+            AddField(lines, "Derived columns", bar.columnCount)
+            AddField(lines, "Orientation", bar.orientation)
+            AddField(lines, "Icon size", bar.iconSize)
+            AddField(lines, "Icon padding", bar.iconPadding)
+
+            if bar.anchor then
+                table.insert(
+                    lines,
+                    "Anchor: " .. addon:SafeString(bar.anchor.point)
+                        .. " -> " .. addon:SafeString(bar.anchor.relativeTo)
+                        .. " / " .. addon:SafeString(bar.anchor.relativePoint)
+                        .. " | X " .. addon:SafeString(bar.anchor.offsetX)
+                        .. " | Y " .. addon:SafeString(bar.anchor.offsetY)
+                )
+            else
+                table.insert(lines, "Anchor: Unavailable")
+            end
+
+            if debugEnabled then
+                for _, setting in ipairs(bar.settings) do
+                    table.insert(
+                        lines,
+                        "Setting: " .. setting.name
+                            .. " | ID " .. addon:SafeString(setting.id)
+                            .. " | Value " .. addon:SafeString(setting.value)
+                            .. (setting.decodedValue
+                                and " (" .. setting.decodedValue .. ")"
+                                or "")
+                    )
+                end
+            else
+                for _, setting in ipairs(bar.visibilitySettings or {}) do
+                    table.insert(
+                        lines,
+                        setting.name .. ": "
+                            .. addon:SafeString(
+                                setting.decodedValue or setting.value
+                            )
+                    )
+                end
+            end
         end
     end
 
     table.insert(lines, "")
 end
 
-local function AddActionPages(lines, pages)
+local FIXED_PAGE_SYSTEMS = {
+    [3] = 4,
+    [4] = 5,
+    [5] = 3,
+    [6] = 2,
+    [13] = 6,
+    [14] = 7,
+    [15] = 8,
+}
+
+local function ShouldIncludePage(page, editMode, debugEnabled)
+    if debugEnabled or page.active then
+        return true
+    end
+
+    if not page.containsActions then
+        return false
+    end
+
+    local fixedSystem = FIXED_PAGE_SYSTEMS[page.page]
+
+    if not fixedSystem then
+        return true
+    end
+
+    for _, bar in ipairs(editMode.bars or {}) do
+        if bar.systemIndex == fixedSystem then
+            return bar.configuredEnabled ~= false
+        end
+    end
+
+    return true
+end
+
+local function AddActionPages(lines, pages, editMode, debugEnabled)
     table.insert(lines, "[ACTION BAR CONTENTS AND ALTERNATE PAGES]")
 
     for _, page in ipairs(pages) do
-        table.insert(lines, "")
-        table.insert(lines, "[" .. page.name .. "]")
-        AddField(lines, "Logical/page type", page.type)
-        AddField(lines, "Page/index", page.page)
-        table.insert(
-            lines,
-            "Underlying slots: " .. page.firstSlot .. "-" .. page.lastSlot
-        )
-        if page.activeApplicable then
-            table.insert(lines, "Currently active: " .. YesNo(page.active))
-        else
-            table.insert(lines, "Currently active: N/A (fixed bar)")
-        end
-        table.insert(lines, "Contains actions: " .. YesNo(page.containsActions))
-        AddField(lines, "Form/state association", page.association)
-
-        if #page.specialTypes > 0 then
-            table.insert(lines, "Special roles: " .. table.concat(page.specialTypes, ", "))
-        end
-
-        for _, entry in ipairs(page.actions) do
+        if ShouldIncludePage(page, editMode, debugEnabled) then
+            table.insert(lines, "")
+            table.insert(lines, "[" .. page.name .. "]")
+            AddField(lines, "Logical/page type", page.type)
+            AddField(lines, "Page/index", page.page)
             table.insert(
                 lines,
-                "Button " .. entry.button
-                    .. " | Slot " .. entry.slot
-                    .. " | " .. FormatAction(entry.action)
-                    .. " | Bind " .. FormatBindings(entry)
-                    .. " | BindingCommand " .. entry.bindingCommand
+                "Underlying slots: " .. page.firstSlot .. "-" .. page.lastSlot
             )
+            if page.activeApplicable then
+                table.insert(lines, "Currently active: " .. YesNo(page.active))
+            else
+                table.insert(lines, "Currently active: N/A (fixed bar)")
+            end
+            table.insert(
+                lines,
+                "Contains actions: " .. YesNo(page.containsActions)
+            )
+            AddField(lines, "Form/state association", page.association)
 
-            if entry.action and entry.action.type == "macro" then
-                table.insert(lines, "  Macro body:")
-                local body = entry.action.macroBody or "Unavailable"
+            if #page.specialTypes > 0 then
+                table.insert(
+                    lines,
+                    "Special roles: " .. table.concat(page.specialTypes, ", ")
+                )
+            end
 
-                for macroLine in (body .. "\n"):gmatch("(.-)\n") do
-                    table.insert(lines, "    " .. macroLine)
+            for _, entry in ipairs(page.actions) do
+                if debugEnabled or entry.action then
+                    table.insert(
+                        lines,
+                        "Button " .. entry.button
+                            .. " | Slot " .. entry.slot
+                            .. " | " .. FormatAction(entry.action)
+                            .. " | Bind " .. FormatBindings(entry)
+                            .. " | BindingCommand " .. entry.bindingCommand
+                    )
+
+                    if entry.action and entry.action.type == "macro" then
+                        table.insert(lines, "  Macro body:")
+                        local body = entry.action.macroBody or "Unavailable"
+
+                        for macroLine in (body .. "\n"):gmatch("(.-)\n") do
+                            table.insert(lines, "    " .. macroLine)
+                        end
+                    end
                 end
             end
         end
@@ -329,6 +411,12 @@ local function AddCoverage(lines, abilities)
                     .. (not ability.hasReportedReplacementRelationship
                         and " | Override/base relationship: None reported by API"
                         or "")
+                    .. (ability.otherControlCoverage
+                        and " | " .. ability.otherControlCoverage
+                        or "")
+                    .. (ability.stateCoverageNote
+                        and " | State note: " .. ability.stateCoverageNote
+                        or "")
             )
         end
     end
@@ -336,10 +424,11 @@ local function AddCoverage(lines, abilities)
     table.insert(lines, "")
 end
 
-function addon:FormatSnapshot(snapshot)
+function addon:FormatSnapshot(snapshot, debugEnabled)
     local lines = {
         "# RSH Character Snapshot",
         "Format Version: " .. snapshot.formatVersion,
+        "Debug: " .. (debugEnabled and "On" or "Off"),
         "Generated: " .. (snapshot.generatedAt
             and date("%Y-%m-%d %H:%M:%S", snapshot.generatedAt)
             or "Unavailable"),
@@ -353,11 +442,26 @@ function addon:FormatSnapshot(snapshot)
     AddActionState(lines, snapshot.actionState)
     AddTalents(lines, snapshot.talents)
     AddAbilities(lines, snapshot.abilities)
-    AddEditMode(lines, snapshot.editMode)
-    AddActionPages(lines, snapshot.actionPages)
+    AddEditMode(lines, snapshot.editMode, debugEnabled)
+    AddActionPages(
+        lines,
+        snapshot.actionPages,
+        snapshot.editMode,
+        debugEnabled
+    )
     AddCoverage(lines, snapshot.uncoveredAbilities)
     table.insert(lines, "[NOTES / LIMITATIONS]")
-    table.insert(lines, "Empty pages are included intentionally for diagnostics.")
+    if debugEnabled then
+        table.insert(
+            lines,
+            "Empty pages are included intentionally for diagnostics."
+        )
+    else
+        table.insert(
+            lines,
+            "Empty unknown pages and disabled empty bars are omitted."
+        )
+    end
     table.insert(lines, "Bonus-page form/state names are not guessed.")
     table.insert(
         lines,

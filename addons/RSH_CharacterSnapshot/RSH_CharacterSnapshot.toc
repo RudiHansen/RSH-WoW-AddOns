@@ -4,6 +4,7 @@
 ## Author: Rudi
 ## Version: 1.0.0
 ## OptionalDeps: RSH
+## SavedVariables: RSHCharacterSnapshotDB
 
 Core.lua
 Character.lua

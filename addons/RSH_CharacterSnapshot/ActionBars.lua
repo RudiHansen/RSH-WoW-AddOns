@@ -124,6 +124,18 @@ local function ResolveAction(slot)
     elseif actionType == "flyout" then
         action.flyoutID = actionID
         action.name = GetFlyoutInfo and select(1, GetFlyoutInfo(actionID))
+    elseif actionType == "summonmount" then
+        action.mountID = tonumber(actionID)
+
+        if action.mountID
+            and C_MountJournal
+            and C_MountJournal.GetMountInfoByID
+        then
+            action.name = addon:SafeCall(
+                C_MountJournal.GetMountInfoByID,
+                action.mountID
+            )
+        end
     else
         action.name = GetActionText and GetActionText(slot)
     end
@@ -175,6 +187,8 @@ function addon:CollectActionBars()
     local tempPage = ReadActionBarValue("GetTempShapeshiftBarIndex")
     local extraPage = ReadActionBarValue("GetExtraBarIndex")
     local multiCastPage = ReadActionBarValue("GetMultiCastBarIndex")
+    local currentFormIndex = GetShapeshiftForm
+        and GetShapeshiftForm() or 0
     local state = {
         currentPage = currentPage,
         bonusIndex = bonusIndex,
@@ -190,9 +204,35 @@ function addon:CollectActionBars()
         tempShapeshiftActive = ReadActionBarFlag("HasTempShapeshiftActionBar"),
         extraActive = ReadActionBarFlag("HasExtraActionBar"),
         possessVisible = ReadActionBarFlag("IsPossessBarVisible"),
-        shapeshiftForm = GetShapeshiftForm and GetShapeshiftForm() or nil,
+        shapeshiftForm = currentFormIndex,
+        shapeshiftForms = {},
         mounted = IsMounted and IsMounted() or nil,
     }
+
+    local formCount = GetNumShapeshiftForms
+        and GetNumShapeshiftForms() or 0
+
+    for formIndex = 1, formCount do
+        local _, active, castable, formSpellID = GetShapeshiftFormInfo(
+            formIndex
+        )
+        local form = {
+            index = formIndex,
+            active = active,
+            castable = castable,
+            spellID = formSpellID,
+            name = formSpellID and C_Spell
+                and C_Spell.GetSpellName
+                and addon:SafeCall(C_Spell.GetSpellName, formSpellID),
+        }
+        table.insert(state.shapeshiftForms, form)
+
+        if active then
+            state.shapeshiftForm = formIndex
+            state.shapeshiftFormSpellID = formSpellID
+            state.shapeshiftFormName = form.name
+        end
+    end
     local pagesByIndex = {}
 
     local specialPageActive = state.bonusActive
@@ -218,10 +258,21 @@ function addon:CollectActionBars()
     if state.bonusActive and bonusIndex then
         AddPage(
             pagesByIndex,
-            bonusIndex + 6,
+            bonusIndex,
             "Bonus action bar",
             true
         )
+
+        local activeBonusPage = pagesByIndex[bonusIndex]
+
+        if activeBonusPage and state.shapeshiftForm > 0 then
+            activeBonusPage.association = state.shapeshiftFormName
+                and ("Known current form: "
+                    .. state.shapeshiftFormName
+                    .. " (index " .. state.shapeshiftForm .. ")")
+                or ("Known current shapeshift form index "
+                    .. state.shapeshiftForm)
+        end
     end
 
     local pages = {}
