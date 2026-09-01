@@ -114,11 +114,13 @@ local function CollectTalents(talents, activeTalentSpells)
                         rank = rank,
                         maxRanks = entryInfo and entryInfo.maxRanks,
                         passive = passive,
+                        replacesSpellID = definitionInfo
+                            and definitionInfo.overriddenSpellID,
                     }
                     table.insert(talents, talent)
 
                     if spellID and passive == false then
-                        activeTalentSpells[spellID] = talent.name
+                        activeTalentSpells[spellID] = talent
                     end
                 end
             end
@@ -129,7 +131,13 @@ local function CollectTalents(talents, activeTalentSpells)
     return nil, configID
 end
 
-local function AddAbility(abilitiesBySpellID, spellID, name, source)
+local function AddAbility(
+    abilitiesBySpellID,
+    spellID,
+    name,
+    source,
+    replacesSpellID
+)
     if not spellID then
         return
     end
@@ -147,11 +155,16 @@ local function AddAbility(abilitiesBySpellID, spellID, name, source)
             spellID = spellID,
             name = name or GetSpellName(spellID) or "Unknown spell",
             sources = {},
+            replacesSpellID = replacesSpellID,
         }
         abilitiesBySpellID[spellID] = ability
     end
 
     ability.sources[source] = true
+
+    if replacesSpellID then
+        ability.replacesSpellID = replacesSpellID
+    end
 end
 
 local function CollectSpellBook(abilitiesBySpellID)
@@ -173,6 +186,12 @@ local function CollectSpellBook(abilitiesBySpellID)
     local lineCount = addon:SafeCall(
         C_SpellBook.GetNumSpellBookSkillLines
     ) or 0
+    local currentSpec = GetSpecialization()
+    local currentSpecID = currentSpec
+        and select(1, GetSpecializationInfo(currentSpec))
+    local localizedClassName = UnitClass("player")
+    local spellItemType = Enum and Enum.SpellBookItemType
+        and Enum.SpellBookItemType.Spell
 
     for lineIndex = 1, lineCount do
         local lineInfo = addon:SafeCall(
@@ -180,7 +199,19 @@ local function CollectSpellBook(abilitiesBySpellID)
             lineIndex
         )
 
-        if lineInfo and not lineInfo.shouldHide then
+        local isGeneralLine = lineIndex == 1
+        local isCurrentSpecLine = lineInfo
+            and lineInfo.specID == currentSpecID
+        local isCurrentClassLine = lineInfo
+            and lineInfo.name == localizedClassName
+            and lineInfo.specID == nil
+            and lineInfo.offSpecID == nil
+
+        if lineInfo
+            and not lineInfo.shouldHide
+            and not isGeneralLine
+            and (isCurrentClassLine or isCurrentSpecLine)
+        then
             local firstIndex = (lineInfo.itemIndexOffset or 0) + 1
             local lastIndex = firstIndex + (lineInfo.numSpellBookItems or 0) - 1
 
@@ -191,13 +222,19 @@ local function CollectSpellBook(abilitiesBySpellID)
                     bank
                 )
 
-                if itemInfo and not itemInfo.isOffSpec then
+                if itemInfo
+                    and not itemInfo.isOffSpec
+                    and (spellItemType == nil
+                        or itemInfo.itemType == spellItemType)
+                then
                     local spellID = itemInfo.spellID or itemInfo.actionID
                     AddAbility(
                         abilitiesBySpellID,
                         spellID,
                         itemInfo.name,
-                        "Spellbook: " .. (lineInfo.name or "Unknown")
+                        isCurrentSpecLine
+                            and "Current specialization spellbook"
+                            or "Current class spellbook"
                     )
                 end
             end
@@ -214,8 +251,14 @@ function addon:CollectTalentsAndAbilities()
     local talentError, configID = CollectTalents(talents, activeTalentSpells)
     local spellBookError = CollectSpellBook(abilitiesBySpellID)
 
-    for spellID, name in pairs(activeTalentSpells) do
-        AddAbility(abilitiesBySpellID, spellID, name, "Selected talent")
+    for spellID, talent in pairs(activeTalentSpells) do
+        AddAbility(
+            abilitiesBySpellID,
+            spellID,
+            talent.name,
+            "Selected talent",
+            talent.replacesSpellID
+        )
     end
 
     local abilities = {}
@@ -237,4 +280,99 @@ function addon:CollectTalentsAndAbilities()
     talents.configID = configID
     abilities.error = spellBookError
     return talents, abilities
+end
+
+local function AddCandidate(candidates, seenSpellIDs, spellID, relationship)
+    if type(spellID) == "number"
+        and spellID > 0
+        and not seenSpellIDs[spellID]
+    then
+        seenSpellIDs[spellID] = true
+        table.insert(candidates, {
+            spellID = spellID,
+            relationship = relationship,
+        })
+    end
+end
+
+function addon:ApplyAbilityCoverage(abilities, actionSpellIDs)
+    for _, ability in ipairs(abilities) do
+        local candidates = {}
+        local seenSpellIDs = {}
+        AddCandidate(candidates, seenSpellIDs, ability.spellID, "Direct")
+        AddCandidate(
+            candidates,
+            seenSpellIDs,
+            ability.replacesSpellID,
+            "Replaced spell"
+        )
+
+        if C_Spell and C_Spell.GetOverrideSpell then
+            local overrideSpellID = self:SafeCall(
+                C_Spell.GetOverrideSpell,
+                ability.spellID
+            )
+
+            if overrideSpellID and overrideSpellID ~= ability.spellID then
+                ability.overrideSpellID = overrideSpellID
+                AddCandidate(
+                    candidates,
+                    seenSpellIDs,
+                    overrideSpellID,
+                    "Current override"
+                )
+            end
+        end
+
+        if C_SpellBook and C_SpellBook.FindSpellOverrideByID then
+            local overrideSpellID = self:SafeCall(
+                C_SpellBook.FindSpellOverrideByID,
+                ability.spellID
+            )
+
+            if overrideSpellID and overrideSpellID ~= ability.spellID then
+                ability.overrideSpellID = ability.overrideSpellID
+                    or overrideSpellID
+                AddCandidate(
+                    candidates,
+                    seenSpellIDs,
+                    overrideSpellID,
+                    "Spellbook override"
+                )
+            end
+        end
+
+        if C_SpellBook and C_SpellBook.FindBaseSpellByID then
+            local baseSpellID = self:SafeCall(
+                C_SpellBook.FindBaseSpellByID,
+                ability.spellID
+            )
+
+            if baseSpellID and baseSpellID ~= ability.spellID then
+                ability.baseSpellID = baseSpellID
+                AddCandidate(
+                    candidates,
+                    seenSpellIDs,
+                    baseSpellID,
+                    "Base spell"
+                )
+            end
+        end
+
+        ability.hasReportedReplacementRelationship =
+            ability.replacesSpellID ~= nil
+            or ability.overrideSpellID ~= nil
+            or ability.baseSpellID ~= nil
+
+        ability.covered = false
+
+        for _, candidate in ipairs(candidates) do
+            if actionSpellIDs[candidate.spellID] then
+                ability.covered = true
+                ability.coveredBySpellID = candidate.spellID
+                ability.coveredByRelationship = candidate.relationship
+                break
+            end
+        end
+    end
 end

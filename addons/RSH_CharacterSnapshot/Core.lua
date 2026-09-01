@@ -46,9 +46,10 @@ function addon:GenerateSnapshot()
         self:CollectActionBars()
     snapshot.editMode = self:CollectEditModeActionBars()
     snapshot.uncoveredAbilities = {}
+    self:ApplyAbilityCoverage(snapshot.abilities, snapshot.actionSpellIDs)
 
     for _, ability in ipairs(snapshot.abilities) do
-        if ability.spellID and not snapshot.actionSpellIDs[ability.spellID] then
+        if ability.spellID and not ability.covered then
             table.insert(snapshot.uncoveredAbilities, ability)
         end
     end

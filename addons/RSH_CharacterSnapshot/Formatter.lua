@@ -103,6 +103,15 @@ local function AddTalents(lines, talents)
                 "Type " .. (talent.passive == nil and "Unknown"
                     or talent.passive and "Passive" or "Active"),
             }
+
+            if talent.replacesSpellID then
+                table.insert(
+                    parts,
+                    "Replaces SpellID "
+                        .. addon:SafeString(talent.replacesSpellID)
+                )
+            end
+
             table.insert(lines, table.concat(parts, " | "))
         end
     end
@@ -121,11 +130,54 @@ local function AddAbilities(lines, abilities)
         table.insert(lines, "None found")
     else
         for _, ability in ipairs(abilities) do
+            local parts = {
+                ability.name,
+                "SpellID " .. addon:SafeString(ability.spellID),
+                "Source: " .. table.concat(ability.sources, ", "),
+            }
+
+            if ability.replacesSpellID then
+                table.insert(
+                    parts,
+                    "Replaces SpellID "
+                        .. addon:SafeString(ability.replacesSpellID)
+                )
+            end
+
+            if ability.overrideSpellID then
+                local overrideName = addon:SafeCall(
+                    C_Spell.GetSpellName,
+                    ability.overrideSpellID
+                )
+                table.insert(
+                    parts,
+                    "Current override "
+                        .. (overrideName or "Unknown")
+                        .. " (SpellID " .. ability.overrideSpellID .. ")"
+                )
+            end
+
+            if ability.baseSpellID then
+                table.insert(
+                    parts,
+                    "Base SpellID " .. ability.baseSpellID
+                )
+            end
+
+            if ability.covered then
+                table.insert(
+                    parts,
+                    "Covered: Yes via SpellID "
+                        .. ability.coveredBySpellID
+                        .. " (" .. ability.coveredByRelationship .. ")"
+                )
+            else
+                table.insert(parts, "Covered: No")
+            end
+
             table.insert(
                 lines,
-                ability.name
-                    .. " | SpellID " .. addon:SafeString(ability.spellID)
-                    .. " | Source: " .. table.concat(ability.sources, ", ")
+                table.concat(parts, " | ")
             )
         end
     end
@@ -137,7 +189,16 @@ local function AddEditMode(lines, editMode)
     table.insert(lines, "[BLIZZARD ACTION BAR LAYOUT]")
     AddField(lines, "Active layout index", editMode.activeLayout)
     AddField(lines, "Layout name", editMode.layoutName)
-    AddField(lines, "Layout type", editMode.layoutType)
+    AddField(
+        lines,
+        "Layout type",
+        editMode.layoutTypeName and (
+            editMode.layoutTypeName
+                .. " (" .. addon:SafeString(editMode.layoutType) .. ")"
+        ) or editMode.layoutType
+    )
+    AddField(lines, "Layout source", editMode.layoutSource)
+    AddField(lines, "Blizzard Edit Mode loaded", YesNo(editMode.editModeLoaded))
 
     if editMode.error then
         AddField(lines, "Status", editMode.error)
@@ -156,6 +217,10 @@ local function AddEditMode(lines, editMode)
         )
         table.insert(lines, "Runtime shown: " .. YesNo(bar.runtimeShown))
         table.insert(lines, "Runtime visible: " .. YesNo(bar.runtimeVisible))
+        table.insert(
+            lines,
+            "Configured/enabled: " .. YesNo(bar.configuredEnabled)
+        )
         AddField(lines, "Runtime effective scale", bar.runtimeScale)
         AddField(lines, "Configured buttons", bar.buttonCount)
         AddField(lines, "Configured rows", bar.rowCount)
@@ -180,6 +245,9 @@ local function AddEditMode(lines, editMode)
                 "Setting: " .. setting.name
                     .. " | ID " .. addon:SafeString(setting.id)
                     .. " | Value " .. addon:SafeString(setting.value)
+                    .. (setting.decodedValue
+                        and " (" .. setting.decodedValue .. ")"
+                        or "")
             )
         end
     end
@@ -199,7 +267,11 @@ local function AddActionPages(lines, pages)
             lines,
             "Underlying slots: " .. page.firstSlot .. "-" .. page.lastSlot
         )
-        table.insert(lines, "Currently active: " .. YesNo(page.active))
+        if page.activeApplicable then
+            table.insert(lines, "Currently active: " .. YesNo(page.active))
+        else
+            table.insert(lines, "Currently active: N/A (fixed bar)")
+        end
         table.insert(lines, "Contains actions: " .. YesNo(page.containsActions))
         AddField(lines, "Form/state association", page.association)
 
@@ -247,6 +319,16 @@ local function AddCoverage(lines, abilities)
             table.insert(
                 lines,
                 ability.name .. " | SpellID " .. addon:SafeString(ability.spellID)
+                    .. (ability.overrideSpellID
+                        and " | Current override SpellID "
+                            .. ability.overrideSpellID
+                        or "")
+                    .. (ability.baseSpellID
+                        and " | Base SpellID " .. ability.baseSpellID
+                        or "")
+                    .. (not ability.hasReportedReplacementRelationship
+                        and " | Override/base relationship: None reported by API"
+                        or "")
             )
         end
     end
@@ -277,6 +359,11 @@ function addon:FormatSnapshot(snapshot)
     table.insert(lines, "[NOTES / LIMITATIONS]")
     table.insert(lines, "Empty pages are included intentionally for diagnostics.")
     table.insert(lines, "Bonus-page form/state names are not guessed.")
+    table.insert(
+        lines,
+        "The General spellbook line is excluded because Retail does not "
+            .. "provide stable combat/racial classification for its mixed entries."
+    )
     table.insert(
         lines,
         "Inactive override, vehicle, or temporary pages may not be "

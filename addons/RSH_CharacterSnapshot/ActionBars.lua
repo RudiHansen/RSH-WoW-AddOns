@@ -147,6 +147,7 @@ local function AddPage(pagesByIndex, pageIndex, specialType, active)
             type = descriptor.type or "Other action page",
             association = descriptor.bonus and "Unknown" or "Known",
             active = false,
+            activeApplicable = descriptor.binding == nil,
             specialTypes = {},
             actions = {},
         }
@@ -157,6 +158,7 @@ local function AddPage(pagesByIndex, pageIndex, specialType, active)
         table.insert(page.specialTypes, specialType)
         page.type = specialType
         page.association = "Known: " .. specialType
+        page.activeApplicable = true
     end
 
     if active then

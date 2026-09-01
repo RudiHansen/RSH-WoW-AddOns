@@ -21,6 +21,7 @@ local SETTING_NAMES = {
     HideBarScrolling = "Hide bar scrolling",
     AlwaysShowButtons = "Always show buttons",
     Visibility = "Visibility",
+    VisibleSetting = "Visibility",
 }
 
 local function BuildEnumLookup(enumTable, preferredNames)
@@ -39,21 +40,72 @@ local function FindActiveLayout(layoutInfo)
         return nil
     end
 
-    for _, collectionName in ipairs({ "layouts", "accountLayouts", "characterLayouts" }) do
-        for _, layout in ipairs(layoutInfo[collectionName] or {}) do
-            if layout.layoutIndex == layoutInfo.activeLayout
-                or layout.layoutID == layoutInfo.activeLayout
-            then
-                return layout
-            end
+    local manager = _G.EditModeManagerFrame
+
+    if manager and manager.GetActiveLayoutInfo then
+        local activeLayout = addon:SafeCall(
+            manager.GetActiveLayoutInfo,
+            manager
+        )
+
+        if activeLayout then
+            return activeLayout, "EditModeManagerFrame"
         end
     end
 
+    local combinedLayouts = {}
+    local presetManager = _G.EditModePresetLayoutManager
+
+    if presetManager and presetManager.GetCopyOfPresetLayouts then
+        local presetLayouts = addon:SafeCall(
+            presetManager.GetCopyOfPresetLayouts,
+            presetManager
+        ) or {}
+
+        for _, layout in ipairs(presetLayouts) do
+            table.insert(combinedLayouts, layout)
+        end
+    end
+
+    for _, layout in ipairs(layoutInfo.layouts or {}) do
+        table.insert(combinedLayouts, layout)
+    end
+
+    if combinedLayouts[layoutInfo.activeLayout] then
+        return combinedLayouts[layoutInfo.activeLayout], "Combined presets and saved layouts"
+    end
+
     if layoutInfo.layouts and layoutInfo.layouts[layoutInfo.activeLayout] then
-        return layoutInfo.layouts[layoutInfo.activeLayout]
+        return layoutInfo.layouts[layoutInfo.activeLayout], "C_EditMode.GetLayouts"
     end
 
     return nil
+end
+
+local function DecodeSettingValue(settingName, value)
+    local valueEnums = {
+        Orientation = Enum and Enum.ActionBarOrientation,
+        Visibility = Enum and (
+            Enum.ActionBarVisibleSetting
+            or Enum.EditModeActionBarVisibleSetting
+        ),
+    }
+    local valueNames = BuildEnumLookup(valueEnums[settingName])
+    return valueNames[value]
+end
+
+local function EnsureEditModeLoaded()
+    if _G.EditModeManagerFrame then
+        return true
+    end
+
+    local loadAddOn = C_AddOns and C_AddOns.LoadAddOn or _G.LoadAddOn
+
+    if loadAddOn then
+        addon:SafeCall(loadAddOn, "Blizzard_EditMode")
+    end
+
+    return _G.EditModeManagerFrame ~= nil
 end
 
 function addon:CollectEditModeActionBars()
@@ -64,11 +116,17 @@ function addon:CollectEditModeActionBars()
         return result
     end
 
+    result.editModeLoaded = EnsureEditModeLoaded()
     local layoutInfo = self:SafeCall(C_EditMode.GetLayouts)
-    local activeLayout = FindActiveLayout(layoutInfo)
+    local activeLayout, layoutSource = FindActiveLayout(layoutInfo)
     result.activeLayout = layoutInfo and layoutInfo.activeLayout
+    result.layoutSource = layoutSource
     result.layoutName = activeLayout and activeLayout.layoutName
     result.layoutType = activeLayout and activeLayout.layoutType
+    result.layoutTypeName = activeLayout
+        and BuildEnumLookup(Enum and Enum.EditModeLayoutType)[
+            activeLayout.layoutType
+        ]
 
     if not activeLayout then
         result.error = "Active Edit Mode layout could not be resolved"
@@ -90,12 +148,25 @@ function addon:CollectEditModeActionBars()
                 anchor = systemInfo.anchorInfo,
                 settings = {},
             }
-            local frame = bar.frameName and _G[bar.frameName]
+            local manager = _G.EditModeManagerFrame
+            local frame = manager
+                and manager.GetRegisteredSystemFrame
+                and self:SafeCall(
+                    manager.GetRegisteredSystemFrame,
+                    manager,
+                    actionBarSystem,
+                    systemInfo.systemIndex
+                )
+                or bar.frameName and _G[bar.frameName]
 
             if frame then
+                bar.frameName = frame.GetName
+                    and self:SafeCall(frame.GetName, frame)
+                    or bar.frameName
                 bar.runtimeShown = self:SafeCall(frame.IsShown, frame)
                 bar.runtimeVisible = self:SafeCall(frame.IsVisible, frame)
                 bar.runtimeScale = self:SafeCall(frame.GetEffectiveScale, frame)
+                bar.configuredEnabled = bar.runtimeShown
             end
 
             for _, settingInfo in ipairs(systemInfo.settings or {}) do
@@ -104,6 +175,10 @@ function addon:CollectEditModeActionBars()
                     name = settingNames[settingInfo.setting]
                         or ("Setting " .. self:SafeString(settingInfo.setting)),
                     value = settingInfo.value,
+                    decodedValue = DecodeSettingValue(
+                        settingNames[settingInfo.setting],
+                        settingInfo.value
+                    ),
                 }
                 table.insert(bar.settings, setting)
 
