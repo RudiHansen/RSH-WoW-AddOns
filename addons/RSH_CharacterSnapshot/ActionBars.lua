@@ -104,9 +104,23 @@ local function ResolveAction(slot)
             action.name, action.icon, action.macroBody = GetMacroInfo(action.macroID)
         end
     elseif actionType == "equipmentset" then
-        action.equipmentSetID = actionID
-        action.name = C_EquipmentSet
-            and C_EquipmentSet.GetEquipmentSetInfo(actionID)
+        if type(actionID) == "string" then
+            action.name = actionID
+            action.equipmentSetID = C_EquipmentSet
+                and C_EquipmentSet.GetEquipmentSetID
+                and addon:SafeCall(
+                    C_EquipmentSet.GetEquipmentSetID,
+                    actionID
+                )
+        elseif type(actionID) == "number" then
+            action.equipmentSetID = actionID
+            action.name = C_EquipmentSet
+                and C_EquipmentSet.GetEquipmentSetInfo
+                and addon:SafeCall(
+                    C_EquipmentSet.GetEquipmentSetInfo,
+                    actionID
+                )
+        end
     elseif actionType == "flyout" then
         action.flyoutID = actionID
         action.name = GetFlyoutInfo and select(1, GetFlyoutInfo(actionID))

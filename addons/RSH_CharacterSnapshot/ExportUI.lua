@@ -67,11 +67,19 @@ local function CreateExportContent(parent, standaloneWindow)
     editBox:SetFontObject(ChatFontNormal)
     editBox:SetWidth(560)
     editBox:SetTextInsets(4, 4, 4, 4)
+    local textMeasure = content:CreateFontString(
+        nil,
+        "ARTWORK",
+        "ChatFontNormal"
+    )
+    textMeasure:SetWidth(560)
+    textMeasure:SetWordWrap(true)
     editBox:SetScript("OnEscapePressed", function(self)
         self:ClearFocus()
     end)
     editBox:SetScript("OnTextChanged", function(self)
-        self:SetHeight(math.max(1, self:GetStringHeight() + 12))
+        textMeasure:SetText(self:GetText() or "")
+        self:SetHeight(math.max(1, textMeasure:GetStringHeight() + 12))
     end)
     scrollFrame:SetScrollChild(editBox)
     content.EditBox = editBox
