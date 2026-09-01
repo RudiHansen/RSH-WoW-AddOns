@@ -1,0 +1,13 @@
+## Interface: 120007
+## Title: RSH - Character Snapshot
+## Notes: Exports character talents, abilities, action bars, bindings, and layout
+## Author: Rudi
+## Version: 1.0.0
+## OptionalDeps: RSH
+
+Core.lua
+Character.lua
+ActionBars.lua
+EditMode.lua
+Formatter.lua
+ExportUI.lua
