@@ -47,6 +47,16 @@ local function FormatAction(action)
         table.insert(parts, "Subtype " .. addon:SafeString(action.subType))
     end
 
+    if action.type == "spell" then
+        table.insert(
+            parts,
+            "Availability: " .. addon:SafeString(
+                action.availability,
+                "Unknown"
+            )
+        )
+    end
+
     return table.concat(parts, " | ")
 end
 
@@ -204,7 +214,7 @@ local function AddAbilities(lines, abilities)
 end
 
 local function AddEditMode(lines, editMode, debugEnabled)
-    table.insert(lines, "[BLIZZARD ACTION BAR LAYOUT]")
+    table.insert(lines, "[BLIZZARD EDIT MODE LAYOUT]")
     AddField(lines, "Active layout index", editMode.activeLayout)
     AddField(lines, "Layout name", editMode.layoutName)
     AddField(
@@ -222,71 +232,82 @@ local function AddEditMode(lines, editMode, debugEnabled)
         AddField(lines, "Status", editMode.error)
     end
 
-    if #editMode.bars == 0 then
-        table.insert(lines, "No action-bar systems returned")
+    if #editMode.systems == 0 then
+        table.insert(lines, "No Edit Mode systems returned")
     end
 
-    for _, bar in ipairs(editMode.bars) do
-        local includeBar = debugEnabled
-            or bar.configuredEnabled ~= false
+    local function AddAnchor(label, anchor)
+        if not anchor then
+            AddField(lines, label, "Unavailable")
+            return
+        end
 
-        if includeBar then
-            table.insert(lines, "")
-            table.insert(
-                lines,
-                "Bar system " .. addon:SafeString(bar.systemIndex)
-                    .. " | Frame " .. addon:SafeString(bar.frameName)
-            )
-            table.insert(lines, "Runtime shown: " .. YesNo(bar.runtimeShown))
-            table.insert(lines, "Runtime visible: " .. YesNo(bar.runtimeVisible))
-            table.insert(
-                lines,
-                "Configured/enabled: " .. YesNo(bar.configuredEnabled)
-            )
-            AddField(lines, "Runtime effective scale", bar.runtimeScale)
-            AddField(lines, "Configured buttons", bar.buttonCount)
-            AddField(lines, "Configured rows", bar.rowCount)
-            AddField(lines, "Derived columns", bar.columnCount)
-            AddField(lines, "Orientation", bar.orientation)
-            AddField(lines, "Icon size", bar.iconSize)
-            AddField(lines, "Icon padding", bar.iconPadding)
+        table.insert(
+            lines,
+            label .. ": " .. addon:SafeString(anchor.point)
+                .. " -> " .. addon:SafeString(anchor.relativeTo)
+                .. " / " .. addon:SafeString(anchor.relativePoint)
+                .. " | X " .. addon:SafeString(anchor.offsetX)
+                .. " | Y " .. addon:SafeString(anchor.offsetY)
+        )
+    end
 
-            if bar.anchor then
+    for _, system in ipairs(editMode.systems) do
+        table.insert(lines, "")
+        table.insert(lines, "[" .. addon:SafeString(system.name) .. "]")
+        AddField(lines, "System type", system.systemType)
+        AddField(
+            lines,
+            "System index",
+            system.systemIndexName and (
+                system.systemIndexName
+                    .. " (" .. addon:SafeString(system.systemIndex) .. ")"
+            ) or system.systemIndex
+        )
+        AddField(lines, "In default position", YesNo(system.isInDefaultPosition))
+        if system.configuredEnabled ~= nil then
+            AddField(lines, "Configured/enabled", YesNo(system.configuredEnabled))
+        end
+        AddField(lines, "Runtime shown", YesNo(system.runtimeShown))
+        AddField(lines, "Runtime visible", YesNo(system.runtimeVisible))
+        AddField(lines, "Scale", system.runtimeScale)
+        AddAnchor("Anchor", system.anchor)
+
+        for _, setting in ipairs(system.settings) do
+            if debugEnabled then
                 table.insert(
                     lines,
-                    "Anchor: " .. addon:SafeString(bar.anchor.point)
-                        .. " -> " .. addon:SafeString(bar.anchor.relativeTo)
-                        .. " / " .. addon:SafeString(bar.anchor.relativePoint)
-                        .. " | X " .. addon:SafeString(bar.anchor.offsetX)
-                        .. " | Y " .. addon:SafeString(bar.anchor.offsetY)
+                    "Setting: " .. setting.name
+                        .. (setting.enumName
+                            and " [" .. setting.enumName .. "]" or "")
+                        .. " | ID " .. addon:SafeString(setting.id)
+                        .. " | Raw " .. addon:SafeString(setting.value)
+                        .. (setting.decodedValue ~= nil
+                            and " | Decoded "
+                                .. addon:SafeString(setting.decodedValue)
+                            or "")
                 )
             else
-                table.insert(lines, "Anchor: Unavailable")
+                AddField(
+                    lines,
+                    setting.name,
+                    setting.decodedValue ~= nil
+                        and setting.decodedValue or setting.value
+                )
             end
+        end
 
-            if debugEnabled then
-                for _, setting in ipairs(bar.settings) do
-                    table.insert(
-                        lines,
-                        "Setting: " .. setting.name
-                            .. " | ID " .. addon:SafeString(setting.id)
-                            .. " | Value " .. addon:SafeString(setting.value)
-                            .. (setting.decodedValue
-                                and " (" .. setting.decodedValue .. ")"
-                                or "")
-                    )
-                end
-            else
-                for _, setting in ipairs(bar.visibilitySettings or {}) do
-                    table.insert(
-                        lines,
-                        setting.name .. ": "
-                            .. addon:SafeString(
-                                setting.decodedValue or setting.value
-                            )
-                    )
-                end
-            end
+        if debugEnabled then
+            AddField(lines, "System ID", system.systemID)
+            AddField(lines, "System enum", system.systemTypeEnum)
+            AddField(lines, "Raw system index", system.systemIndex)
+            AddField(lines, "Runtime frame", system.frameName)
+            AddField(
+                lines,
+                "Runtime effective scale",
+                system.runtimeEffectiveScale
+            )
+            AddAnchor("Secondary anchor", system.anchor2)
         end
     end
 

@@ -60,6 +60,66 @@ local function GetBindingCommand(page, button)
     return "ACTIONBUTTON" .. button
 end
 
+local function IsKnownSpell(spellID)
+    if not C_SpellBook or not C_SpellBook.IsSpellKnown then
+        return nil, false
+    end
+
+    local ok, known = pcall(C_SpellBook.IsSpellKnown, spellID)
+
+    if not ok or type(known) ~= "boolean" or addon:IsSecret(known) then
+        return nil, false
+    end
+
+    return known, true
+end
+
+local function GetSpellAvailability(spellID)
+    if not spellID or not C_SpellBook or not C_SpellBook.IsSpellKnown then
+        return "Unknown"
+    end
+
+    local known, determined = IsKnownSpell(spellID)
+
+    if not determined then
+        return "Unknown"
+    end
+
+    if known then
+        return "Known"
+    end
+
+    local relatedSpellIDs = {}
+    local baseSpellID = addon:SafeCall(
+        C_SpellBook.FindBaseSpellByID,
+        spellID
+    )
+    local overrideSpellID = addon:SafeCall(
+        C_SpellBook.FindSpellOverrideByID,
+        spellID
+    )
+
+    if baseSpellID and baseSpellID ~= spellID then
+        relatedSpellIDs[baseSpellID] = true
+    end
+
+    if overrideSpellID and overrideSpellID ~= spellID then
+        relatedSpellIDs[overrideSpellID] = true
+    end
+
+    for relatedSpellID in pairs(relatedSpellIDs) do
+        local relatedKnown, relationshipDetermined = IsKnownSpell(
+            relatedSpellID
+        )
+
+        if relationshipDetermined and relatedKnown then
+            return "Known via override"
+        end
+    end
+
+    return "Not currently known"
+end
+
 
 local function ResolveAction(slot)
     local actionType, actionID, subType, spellID = addon:SafeCall(
@@ -94,6 +154,7 @@ local function ResolveAction(slot)
         action.name = action.spellID and C_Spell
             and C_Spell.GetSpellName
             and addon:SafeCall(C_Spell.GetSpellName, action.spellID)
+        action.availability = GetSpellAvailability(action.spellID)
     elseif actionType == "item" then
         action.itemID = tonumber(actionID)
         action.name = action.itemID and C_Item.GetItemNameByID(action.itemID)

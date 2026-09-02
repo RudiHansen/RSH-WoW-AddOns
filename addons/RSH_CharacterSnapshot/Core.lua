@@ -59,7 +59,7 @@ function addon:GenerateSnapshot(debugEnabled)
     snapshot.talents, snapshot.abilities = self:CollectTalentsAndAbilities()
     snapshot.actionState, snapshot.actionPages, snapshot.actionSpellIDs =
         self:CollectActionBars()
-    snapshot.editMode = self:CollectEditModeActionBars()
+    snapshot.editMode = self:CollectEditModeLayout()
     snapshot.uncoveredAbilities = {}
     self:ApplyAbilityCoverage(
         snapshot.abilities,
