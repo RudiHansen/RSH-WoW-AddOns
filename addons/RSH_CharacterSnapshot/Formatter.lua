@@ -227,6 +227,33 @@ local function AddEditMode(lines, editMode, debugEnabled)
     )
     AddField(lines, "Layout source", editMode.layoutSource)
     AddField(lines, "Blizzard Edit Mode loaded", YesNo(editMode.editModeLoaded))
+    if editMode.screenWidth and editMode.screenHeight then
+        table.insert(
+            lines,
+            "Physical screen resolution: "
+                .. addon:SafeString(editMode.screenWidth)
+                .. " x " .. addon:SafeString(editMode.screenHeight)
+        )
+    else
+        AddField(lines, "Physical screen resolution", "Unavailable")
+    end
+    if editMode.uiParentWidth and editMode.uiParentHeight then
+        table.insert(
+            lines,
+            "UIParent size: " .. addon:SafeString(editMode.uiParentWidth)
+                .. " x " .. addon:SafeString(editMode.uiParentHeight)
+        )
+    else
+        AddField(lines, "UIParent size", "Unavailable")
+    end
+    AddField(
+        lines,
+        "UIParent effective scale",
+        editMode.uiParentEffectiveScale
+    )
+    if debugEnabled then
+        AddField(lines, "UIParent raw scale", editMode.uiParentScale)
+    end
 
     if editMode.error then
         AddField(lines, "Status", editMode.error)
@@ -270,7 +297,26 @@ local function AddEditMode(lines, editMode, debugEnabled)
         end
         AddField(lines, "Runtime shown", YesNo(system.runtimeShown))
         AddField(lines, "Runtime visible", YesNo(system.runtimeVisible))
-        AddField(lines, "Scale", system.runtimeScale)
+        AddField(lines, "Runtime scale", system.runtimeScale)
+        if system.runtimeWidth and system.runtimeHeight then
+            table.insert(
+                lines,
+                "Runtime size: " .. addon:SafeString(system.runtimeWidth)
+                    .. " x " .. addon:SafeString(system.runtimeHeight)
+            )
+        else
+            AddField(lines, "Runtime size", "Unavailable")
+        end
+        if system.runtimeLeft and system.runtimeRight
+            and system.runtimeTop and system.runtimeBottom then
+            table.insert(
+                lines,
+                "Runtime bounds: Left " .. addon:SafeString(system.runtimeLeft)
+                    .. " | Right " .. addon:SafeString(system.runtimeRight)
+                    .. " | Top " .. addon:SafeString(system.runtimeTop)
+                    .. " | Bottom " .. addon:SafeString(system.runtimeBottom)
+            )
+        end
         AddAnchor("Anchor", system.anchor)
 
         for _, setting in ipairs(system.settings) do

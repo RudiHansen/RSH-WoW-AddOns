@@ -32,6 +32,71 @@ local function Humanize(identifier)
         and (identifier:gsub("(%l)(%u)", "%1 %2")) or nil
 end
 
+local function IsReliableNumber(value)
+    return type(value) == "number"
+        and not addon:IsSecret(value)
+        and value == value
+        and value > -math.huge
+        and value < math.huge
+end
+
+local function CollectGlobalGeometry(result)
+    local screenWidth, screenHeight = addon:SafeCall(_G.GetPhysicalScreenSize)
+    if IsReliableNumber(screenWidth) and IsReliableNumber(screenHeight)
+        and screenWidth > 0 and screenHeight > 0 then
+        result.screenWidth = screenWidth
+        result.screenHeight = screenHeight
+    end
+
+    local uiParent = _G.UIParent
+    if not uiParent then return end
+
+    local width = uiParent.GetWidth
+        and addon:SafeCall(uiParent.GetWidth, uiParent)
+    local height = uiParent.GetHeight
+        and addon:SafeCall(uiParent.GetHeight, uiParent)
+    local effectiveScale = uiParent.GetEffectiveScale
+        and addon:SafeCall(uiParent.GetEffectiveScale, uiParent)
+    local scale = uiParent.GetScale
+        and addon:SafeCall(uiParent.GetScale, uiParent)
+
+    if IsReliableNumber(width) and width > 0 then
+        result.uiParentWidth = width
+    end
+    if IsReliableNumber(height) and height > 0 then
+        result.uiParentHeight = height
+    end
+    if IsReliableNumber(effectiveScale) and effectiveScale > 0 then
+        result.uiParentEffectiveScale = effectiveScale
+    end
+    if IsReliableNumber(scale) and scale > 0 then
+        result.uiParentScale = scale
+    end
+end
+
+local function CollectRuntimeGeometry(entry, frame)
+    local width = frame.GetWidth and addon:SafeCall(frame.GetWidth, frame)
+    local height = frame.GetHeight and addon:SafeCall(frame.GetHeight, frame)
+    if IsReliableNumber(width) and width > 0
+        and IsReliableNumber(height) and height > 0 then
+        entry.runtimeWidth = width
+        entry.runtimeHeight = height
+    end
+
+    local left = frame.GetLeft and addon:SafeCall(frame.GetLeft, frame)
+    local right = frame.GetRight and addon:SafeCall(frame.GetRight, frame)
+    local top = frame.GetTop and addon:SafeCall(frame.GetTop, frame)
+    local bottom = frame.GetBottom and addon:SafeCall(frame.GetBottom, frame)
+    if IsReliableNumber(left) and IsReliableNumber(right)
+        and IsReliableNumber(top) and IsReliableNumber(bottom)
+        and right > left and top > bottom then
+        entry.runtimeLeft = left
+        entry.runtimeRight = right
+        entry.runtimeTop = top
+        entry.runtimeBottom = bottom
+    end
+end
+
 local function FindActiveLayout(layoutInfo)
     if not layoutInfo then return nil end
     local manager = _G.EditModeManagerFrame
@@ -162,6 +227,7 @@ local function CollectSystem(systemInfo, systemNames)
             and addon:SafeCall(frame.GetScale, frame)
         entry.runtimeEffectiveScale = frame.GetEffectiveScale
             and addon:SafeCall(frame.GetEffectiveScale, frame)
+        CollectRuntimeGeometry(entry, frame)
     end
     entry.name = entry.name
         or (systemEnumName == "UnitFrame"
@@ -206,6 +272,7 @@ end
 
 function addon:CollectEditModeLayout()
     local result = { systems = {}, bars = {} }
+    CollectGlobalGeometry(result)
     if not C_EditMode or not C_EditMode.GetLayouts then
         result.error = "Edit Mode API unavailable"
         return result
