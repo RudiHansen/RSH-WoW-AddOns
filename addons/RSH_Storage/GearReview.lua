@@ -2,15 +2,15 @@ local _, addon = ...
 
 local FRESHNESS_SECONDS = 14 * 24 * 60 * 60
 local AMBIGUOUS_EQUIP_LOCS = {
-    INVTYPE_TRINKET = true,
-    INVTYPE_WEAPON = true,
-    INVTYPE_WEAPONMAINHAND = true,
-    INVTYPE_WEAPONOFFHAND = true,
-    INVTYPE_2HWEAPON = true,
-    INVTYPE_RANGED = true,
-    INVTYPE_RANGEDRIGHT = true,
-    INVTYPE_SHIELD = true,
-    INVTYPE_HOLDABLE = true,
+    ["INVTYPE_TRINKET"] = true,
+    ["INVTYPE_WEAPON"] = true,
+    ["INVTYPE_WEAPONMAINHAND"] = true,
+    ["INVTYPE_WEAPONOFFHAND"] = true,
+    ["INVTYPE_2HWEAPON"] = true,
+    ["INVTYPE_RANGED"] = true,
+    ["INVTYPE_RANGEDRIGHT"] = true,
+    ["INVTYPE_SHIELD"] = true,
+    ["INVTYPE_HOLDABLE"] = true,
 }
 
 local function IsFresh(timestamp)
@@ -96,11 +96,13 @@ function addon:ReviewWarbandGear()
     local matchesByIdentity = {}
     local matchesByItemID = {}
     local uncertainty = {}
+    local staleCharacters = {}
     for _, character in ipairs(considered) do
         local gear, gearError = adapter:GetEquippedGear(character.key)
         if not gear or not IsFresh(gear.lastScan) then
             uncertainty[character.key] = gearError
                 or "equipped gear snapshot is missing or older than 14 days"
+            staleCharacters[character.key] = true
         end
         local findings, findError = adapter:FindUpgrades(character.key)
         if not findings then
@@ -131,62 +133,82 @@ function addon:ReviewWarbandGear()
             adapter:GetCharacters(),
             adapter:GetCurrentCharacterKey()
         ),
+        staleCharacters = staleCharacters,
         KEEP = {},
         REVIEW = {},
         DE_CANDIDATE = {},
     }
     local bankFresh = IsFresh(bankTimestamp)
-    local hasUncertainty = next(uncertainty) ~= nil
-
+    local reviewItemIndex = 0
     for _, rawItem in ipairs(items) do
         local item = adapter:GetItemDetails(rawItem)
-        if item.equipLoc and item.equipLoc ~= ""
-            and item.equipLoc ~= "INVTYPE_NON_EQUIP" then
+        if adapter:IsEquippableGear(item) then
+            reviewItemIndex = reviewItemIndex + 1
             item.bindingCategory, item.binding =
                 adapter:GetBindingCategory(rawItem)
             item.hasSpecialEffect = adapter:HasSpecialEffect(rawItem)
             item.matches = matchesByIdentity[item.identity]
-                or matchesByItemID[item.itemID]
+                or (not item.itemLink and matchesByItemID[item.itemID])
                 or {}
+            item.quantity = tonumber(rawItem.stackCount)
+                or tonumber(rawItem.quantity) or 1
             if not item.minimumLevel and item.matches[1] then
                 item.minimumLevel = tonumber(
                     item.matches[1].candidate.requiredLevel
                 )
             end
 
+            item.compatibleCharacters = {}
+            local compatibleByKey = {}
+            for _, character in ipairs(considered) do
+                if adapter:IsItemCompatible(character, item) then
+                    table.insert(item.compatibleCharacters, character)
+                    compatibleByKey[character.key] = true
+                end
+            end
+            local relevantMatches = {}
+            local freshMatches = {}
+            for _, match in ipairs(item.matches) do
+                if compatibleByKey[match.character.key] then
+                    table.insert(relevantMatches, match)
+                    if not uncertainty[match.character.key] then
+                        table.insert(freshMatches, match)
+                    end
+                end
+            end
+            item.matches = relevantMatches
+            local uncertainNames = {}
+            for _, character in ipairs(item.compatibleCharacters) do
+                if uncertainty[character.key] then
+                    table.insert(
+                        uncertainNames,
+                        character.name or character.key
+                    )
+                end
+            end
+            table.sort(uncertainNames)
+
             if #considered == 0 then
                 item.classification = "REVIEW"
                 item.reason = "No characters are selected for consideration"
-            elseif not item.bindingCategory then
-                item.classification = "REVIEW"
-                item.reason = "Warbound binding could not be confirmed"
             elseif not item.itemLevel or item.itemLevel <= 0
                 or not item.itemID then
                 item.classification = "REVIEW"
                 item.reason = "Item metadata is incomplete"
-            elseif item.isCosmetic then
-                item.classification = "REVIEW"
-                item.reason = "Cosmetic gear is outside item-level upgrade evaluation"
-            elseif item.hasSpecialEffect then
-                item.classification = "REVIEW"
-                item.reason = "Special-effect item needs manual review"
             elseif not bankFresh then
                 item.classification = "REVIEW"
                 item.reason = "Warband Bank snapshot is missing or older than 14 days"
-            elseif hasUncertainty then
+            elseif #item.compatibleCharacters == 0 then
+                item.classification = "DE_CANDIDATE"
+                item.reason = "No considered character can use this item type"
+            elseif item.isCosmetic then
                 item.classification = "REVIEW"
-                local names = {}
-                for _, character in ipairs(considered) do
-                    if uncertainty[character.key] then
-                        table.insert(names, character.name or character.key)
-                    end
-                end
-                item.reason = "Missing or stale comparison data for "
-                    .. table.concat(names, ", ")
-            elseif AMBIGUOUS_EQUIP_LOCS[item.equipLoc] then
+                item.reason = "Cosmetic gear needs manual review"
+            elseif item.hasSpecialEffect
+                or AMBIGUOUS_EQUIP_LOCS[item.equipLoc] then
                 item.classification = "REVIEW"
-                if #item.matches > 0 then
-                    local match = item.matches[1]
+                if #freshMatches > 0 then
+                    local match = freshMatches[1]
                     local candidate = match.candidate
                     local difference = (candidate.itemLevel or item.itemLevel)
                         - (candidate.equippedIlvlAtFind or 0)
@@ -196,12 +218,16 @@ function addon:ReviewWarbandGear()
                         or match.character.key
                     item.reason = "Potential +" .. difference
                         .. " ilvl upgrade for " .. item.relevantCharacter
-                        .. "; weapon/trinket value needs manual review"
+                        .. (item.hasSpecialEffect
+                            and "; special-effect value needs manual review"
+                            or "; weapon/trinket value needs manual review")
                 else
-                    item.reason = "Weapon/trinket value cannot be decided safely from item level alone"
+                    item.reason = item.hasSpecialEffect
+                        and "Special-effect value needs manual review"
+                        or "Weapon/trinket value cannot be decided safely from item level alone"
                 end
-            elseif #item.matches > 0 then
-                local match = item.matches[1]
+            elseif #freshMatches > 0 then
+                local match = freshMatches[1]
                 local character = match.character
                 local candidate = match.candidate
                 local difference = (candidate.itemLevel or item.itemLevel)
@@ -219,13 +245,48 @@ function addon:ReviewWarbandGear()
                     item.reason = "+" .. difference .. " ilvl upgrade for "
                         .. item.relevantCharacter
                 end
+            elseif #uncertainNames > 0 then
+                item.classification = "REVIEW"
+                item.reason = "Missing or stale comparison data for "
+                    .. table.concat(uncertainNames, ", ")
             else
                 item.classification = "DE_CANDIDATE"
-                item.reason = "Warband Nexus found no upgrade use for any considered character"
+                item.reason = "All compatible considered characters have equal or better gear"
             end
+            item.reviewIndex = reviewItemIndex
             table.insert(review[item.classification], item)
         end
     end
+
+    local function Deduplicate(list)
+        local deduplicated = {}
+        local byKey = {}
+        for _, item in ipairs(list) do
+            local key
+            if item.itemLink and item.itemLink ~= "" then
+                key = table.concat({
+                    item.itemLink,
+                    tostring(item.itemLevel or ""),
+                    tostring(item.equipLoc or ""),
+                    tostring(item.bindingCategory or "unknown"),
+                    item.classification,
+                    item.reason or "",
+                }, "\031")
+            end
+            local existing = key and byKey[key]
+            if existing then
+                existing.quantity = (existing.quantity or 1)
+                    + (item.quantity or 1)
+            else
+                table.insert(deduplicated, item)
+                if key then byKey[key] = item end
+            end
+        end
+        return deduplicated
+    end
+    review.KEEP = Deduplicate(review.KEEP)
+    review.REVIEW = Deduplicate(review.REVIEW)
+    review.DE_CANDIDATE = Deduplicate(review.DE_CANDIDATE)
 
     local function SortItems(left, right)
         if (left.itemLevel or 0) ~= (right.itemLevel or 0) then

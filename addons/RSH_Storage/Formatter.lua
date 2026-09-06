@@ -16,6 +16,26 @@ local function BindingLabel(sourceType)
     return sourceType or "Unknown"
 end
 
+local EQUIP_LOCATION_LABELS = {
+    ["INVTYPE_HEAD"] = "Head", ["INVTYPE_NECK"] = "Neck",
+    ["INVTYPE_SHOULDER"] = "Shoulder", ["INVTYPE_CLOAK"] = "Back",
+    ["INVTYPE_BACK"] = "Back", ["INVTYPE_CHEST"] = "Chest",
+    ["INVTYPE_ROBE"] = "Chest", ["INVTYPE_WRIST"] = "Wrist",
+    ["INVTYPE_HAND"] = "Hands", ["INVTYPE_WAIST"] = "Waist",
+    ["INVTYPE_LEGS"] = "Legs", ["INVTYPE_FEET"] = "Feet",
+    ["INVTYPE_FINGER"] = "Ring", ["INVTYPE_TRINKET"] = "Trinket",
+    ["INVTYPE_WEAPON"] = "One-Hand Weapon",
+    ["INVTYPE_WEAPONMAINHAND"] = "Main Hand",
+    ["INVTYPE_WEAPONOFFHAND"] = "Off Hand",
+    ["INVTYPE_2HWEAPON"] = "Two-Hand Weapon",
+    ["INVTYPE_SHIELD"] = "Shield", ["INVTYPE_HOLDABLE"] = "Holdable",
+    ["INVTYPE_RANGED"] = "Ranged", ["INVTYPE_RANGEDRIGHT"] = "Ranged",
+}
+
+local function EquipLocationLabel(equipLoc)
+    return EQUIP_LOCATION_LABELS[equipLoc] or equipLoc or "Unknown slot"
+end
+
 local function FormatUpgrade(candidate)
     local difference = (candidate.itemLevel or 0)
         - (candidate.equippedIlvlAtFind or 0)
@@ -31,33 +51,30 @@ local function FormatUpgrade(candidate)
 end
 
 local function FormatReviewItem(item)
-    local fields = {
-        item.name,
-        "Item ID: " .. addon:SafeText(item.itemID),
-        "Item level: " .. addon:SafeText(item.itemLevel),
-        "Equip location: " .. addon:SafeText(item.equipLoc),
-        "Binding: " .. addon:SafeText(item.binding),
-        "Source: " .. addon:SafeText(item.source),
+    local quantity = (item.quantity or 1) > 1
+        and (" x" .. item.quantity) or ""
+    local lines = {
+        item.name .. quantity
+            .. " | ilvl " .. addon:SafeText(item.itemLevel)
+            .. " | " .. EquipLocationLabel(item.equipLoc)
+            .. " | ItemID " .. addon:SafeText(item.itemID)
+            .. " | Binding: " .. addon:SafeText(item.binding, "Unknown"),
     }
-    if item.relevantCharacter then
-        table.insert(fields, "Character: " .. item.relevantCharacter)
+    local relevant = {}
+    for _, character in ipairs(item.compatibleCharacters or {}) do
+        table.insert(relevant, character.name or character.key)
     end
-    if item.matches and #item.matches > 1 then
-        local names = {}
-        for _, match in ipairs(item.matches) do
-            table.insert(
-                names,
-                match.character.name or match.character.key
-            )
-        end
-        table.sort(names)
-        table.insert(fields, "Relevant characters: " .. table.concat(names, ", "))
+    table.sort(relevant)
+    if #relevant > 0 then
+        table.insert(lines, "Relevant: " .. table.concat(relevant, ", "))
     end
-    if item.comparedItemLevel then
-        table.insert(fields, "Current: " .. item.comparedItemLevel)
+    if item.relevantCharacter and item.comparedItemLevel then
+        table.insert(lines, item.relevantCharacter .. ": current "
+            .. item.comparedItemLevel
+            .. (item.difference and " -> +" .. item.difference or ""))
     end
-    table.insert(fields, "Reason: " .. addon:SafeText(item.reason))
-    return table.concat(fields, " | ")
+    table.insert(lines, "Reason: " .. addon:SafeText(item.reason))
+    return table.concat(lines, "\n")
 end
 
 function addon:FormatResults()
@@ -106,26 +123,42 @@ function addon:FormatResults()
 end
 
 function addon:GenerateExport()
-    local currentKey = self.WarbandNexus:IsAvailable()
-        and self.WarbandNexus:GetCurrentCharacterKey() or nil
+    local currentCharacter = self.WarbandNexus:IsAvailable()
+        and self.WarbandNexus:GetCurrentCharacterDisplayName() or nil
     local lines = {
         "# RSH Storage Review",
         "Generated: " .. Date(time()),
-        "Current character: " .. self:SafeText(currentKey),
+        "Current character: " .. self:SafeText(currentCharacter),
         "Advisory only: DE Candidate never means safe to disenchant.",
         "",
         "[CONSIDERED CHARACTERS]",
     }
     local characters = self:GetConsideredCharacters()
+    local realms = {}
+    for _, character in ipairs(characters) do
+        if character.realm and character.realm ~= "" then
+            realms[character.realm] = true
+        end
+    end
+    local realmCount = 0
+    for _ in pairs(realms) do realmCount = realmCount + 1 end
+    local showRealms = realmCount > 1
     if #characters == 0 then table.insert(lines, "None") end
     for _, character in ipairs(characters) do
-        table.insert(lines, table.concat({
-            self:SafeText(character.name),
-            "Realm: " .. self:SafeText(character.realm),
-            "Class: " .. self:SafeText(character.class or character.classFile),
-            "Level: " .. self:SafeText(character.level),
-            "Last seen: " .. Date(character.lastSeen),
-        }, " | "))
+        local identity = self:SafeText(character.name)
+        if showRealms then
+            identity = identity .. " - " .. self:SafeText(character.realm)
+        end
+        local fields = {
+            identity,
+            self:SafeText(character.class or character.classFile),
+            self:SafeText(character.level),
+        }
+        if self.review and self.review.staleCharacters
+            and self.review.staleCharacters[character.key] then
+            table.insert(fields, "stale gear data")
+        end
+        table.insert(lines, table.concat(fields, " | "))
     end
     table.insert(lines, "")
     table.insert(lines, "[CURRENT CHARACTER UPGRADES]")
