@@ -1,0 +1,222 @@
+local addonName, addon = ...
+
+local sharedPage
+local standaloneWindow
+local exportWindow
+
+local function CreateScrollText(parent)
+    local border = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    border:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 12,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 },
+    })
+    border:SetBackdropColor(0.02, 0.02, 0.02, 0.9)
+    local scroll = CreateFrame(
+        "ScrollFrame", nil, border, "UIPanelScrollFrameTemplate"
+    )
+    scroll:SetPoint("TOPLEFT", 7, -7)
+    scroll:SetPoint("BOTTOMRIGHT", -27, 7)
+    local text = CreateFrame("EditBox", nil, scroll)
+    text:SetMultiLine(true)
+    text:SetAutoFocus(false)
+    text:SetFontObject(ChatFontNormal)
+    text:SetWidth(500)
+    text:SetTextInsets(4, 4, 4, 4)
+    local measure = parent:CreateFontString(nil, "ARTWORK", "ChatFontNormal")
+    measure:SetWidth(500)
+    measure:SetWordWrap(true)
+    text:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    text:SetScript("OnTextChanged", function(self)
+        measure:SetText(self:GetText() or "")
+        self:SetHeight(math.max(1, measure:GetStringHeight() + 12))
+    end)
+    border:SetScript("OnSizeChanged", function(self, width)
+        local textWidth = math.max(100, width - 38)
+        text:SetWidth(textWidth)
+        measure:SetWidth(textWidth)
+    end)
+    scroll:SetScrollChild(text)
+    border.EditBox = text
+    return border
+end
+
+local function CreateButton(parent, label, width, point, onClick)
+    local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    button:SetSize(width, 24)
+    button:SetPoint(unpack(point))
+    button:SetText(label)
+    button:SetScript("OnClick", onClick)
+    return button
+end
+
+local function CreateCharacterList(parent)
+    local border = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    border:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 12,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 },
+    })
+    border:SetBackdropColor(0.03, 0.03, 0.03, 0.8)
+    local scroll = CreateFrame(
+        "ScrollFrame", nil, border, "UIPanelScrollFrameTemplate"
+    )
+    scroll:SetPoint("TOPLEFT", 6, -6)
+    scroll:SetPoint("BOTTOMRIGHT", -27, 6)
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(250, 1)
+    scroll:SetScrollChild(content)
+    border.rows = {}
+
+    function border:Refresh()
+        local characters = addon:SynchronizeConsideredCharacters()
+        for index, character in ipairs(characters) do
+            local row = self.rows[index]
+            if not row then
+                row = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
+                row:SetSize(270, 28)
+                row:SetPoint("TOPLEFT", 0, -((index - 1) * 28))
+                row.label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                row.label:SetPoint("LEFT", row, "RIGHT", -240, 0)
+                row.label:SetPoint("RIGHT", 0, 0)
+                row.label:SetJustifyH("LEFT")
+                row:SetScript("OnClick", function(self)
+                    addon:SetCharacterConsidered(self.characterKey, self:GetChecked())
+                end)
+                self.rows[index] = row
+            end
+            row.characterKey = character.key
+            row:SetChecked(addon:IsCharacterConsidered(character.key))
+            local identity = character.name or character.key
+            if character.realm and character.realm ~= "" then
+                identity = identity .. " - " .. character.realm
+            end
+            row.label:SetText(identity .. " | "
+                .. addon:SafeText(character.class or character.classFile)
+                .. " | Level " .. addon:SafeText(character.level))
+            row:Show()
+        end
+        for index = #characters + 1, #self.rows do self.rows[index]:Hide() end
+        content:SetHeight(math.max(1, #characters * 28))
+    end
+    return border
+end
+
+local function ShowExport()
+    if not exportWindow then
+        exportWindow = CreateFrame(
+            "Frame", addonName .. "ExportWindow", UIParent,
+            "BasicFrameTemplateWithInset"
+        )
+        exportWindow:SetSize(760, 600)
+        exportWindow:SetPoint("CENTER")
+        exportWindow:SetFrameStrata("DIALOG")
+        exportWindow:SetClampedToScreen(true)
+        exportWindow:SetMovable(true)
+        exportWindow:EnableMouse(true)
+        exportWindow:RegisterForDrag("LeftButton")
+        exportWindow:SetScript("OnDragStart", exportWindow.StartMoving)
+        exportWindow:SetScript("OnDragStop", exportWindow.StopMovingOrSizing)
+        exportWindow.TitleText:SetText("RSH Storage Export")
+        local text = CreateScrollText(exportWindow)
+        text:SetPoint("TOPLEFT", 10, -32)
+        text:SetPoint("BOTTOMRIGHT", -10, 10)
+        exportWindow.EditBox = text.EditBox
+        table.insert(UISpecialFrames, exportWindow:GetName())
+    end
+    exportWindow.EditBox:SetText(addon:GenerateExport())
+    exportWindow.EditBox:SetCursorPosition(0)
+    exportWindow:Show()
+    exportWindow.EditBox:SetFocus()
+    exportWindow.EditBox:HighlightText()
+end
+
+local function CreatePage(parent)
+    local page = CreateFrame("Frame", nil, parent)
+    page:SetAllPoints()
+    local title = page:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+    title:SetPoint("TOPLEFT", 8, -8)
+    title:SetText("Storage")
+
+    local currentHeading = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    currentHeading:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -14)
+    currentHeading:SetText("Current Character")
+    CreateButton(page, "Find Upgrades", 130,
+        { "LEFT", currentHeading, "RIGHT", 12, 0 },
+        function() addon:FindCurrentCharacterUpgrades() end)
+    CreateButton(page, "Review Warband Gear", 175,
+        { "TOPLEFT", currentHeading, "BOTTOMLEFT", 0, -12 },
+        function() addon:ReviewWarbandGear() end)
+    CreateButton(page, "Export", 90,
+        { "TOPLEFT", currentHeading, "BOTTOMLEFT", 185, -12 }, ShowExport)
+
+    local reviewHeading = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    reviewHeading:SetPoint("TOPLEFT", currentHeading, "BOTTOMLEFT", 0, -50)
+    reviewHeading:SetText("Warband Gear Review")
+    local result = CreateScrollText(page)
+    result:SetPoint("TOPLEFT", reviewHeading, "BOTTOMLEFT", 0, -6)
+    result:SetPoint("BOTTOMRIGHT", page, "BOTTOM", -4, 8)
+    page.Result = result.EditBox
+
+    local charactersHeading = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    charactersHeading:SetPoint("TOPLEFT", page, "TOP", 12, -52)
+    charactersHeading:SetText("Characters / Settings")
+    local hint = page:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    hint:SetPoint("TOPLEFT", charactersHeading, "BOTTOMLEFT", 0, -5)
+    hint:SetWidth(290)
+    hint:SetJustifyH("LEFT")
+    hint:SetText("Only checked characters count for KEEP and DE Candidate decisions.")
+    local characters = CreateCharacterList(page)
+    characters:SetPoint("TOPLEFT", hint, "BOTTOMLEFT", 0, -8)
+    characters:SetPoint("BOTTOMRIGHT", -8, 8)
+    page.Characters = characters
+
+    function page:Refresh()
+        self.Characters:Refresh()
+        self.Result:SetText(addon:FormatResults())
+        self.Result:SetCursorPosition(0)
+    end
+    addon:RegisterRefreshCallback(function()
+        if page:IsShown() then page:Refresh() end
+    end)
+    return page
+end
+
+function addon:ShowStandalone()
+    if not standaloneWindow then
+        standaloneWindow = CreateFrame(
+            "Frame", addonName .. "Window", UIParent,
+            "BasicFrameTemplateWithInset"
+        )
+        standaloneWindow:SetSize(900, 650)
+        standaloneWindow:SetPoint("CENTER")
+        standaloneWindow:SetMovable(true)
+        standaloneWindow:EnableMouse(true)
+        standaloneWindow:RegisterForDrag("LeftButton")
+        standaloneWindow:SetScript("OnDragStart", standaloneWindow.StartMoving)
+        standaloneWindow:SetScript("OnDragStop", standaloneWindow.StopMovingOrSizing)
+        standaloneWindow.TitleText:SetText("RSH Storage")
+        local content = CreateFrame("Frame", nil, standaloneWindow)
+        content:SetPoint("TOPLEFT", 8, -28)
+        content:SetPoint("BOTTOMRIGHT", -8, 8)
+        standaloneWindow.Page = CreatePage(content)
+        table.insert(UISpecialFrames, standaloneWindow:GetName())
+    end
+    standaloneWindow.Page:Refresh()
+    standaloneWindow:Show()
+end
+
+if _G.RSH and _G.RSH.RegisterPage then
+    _G.RSH:RegisterPage({
+        id = "storage",
+        title = "Storage",
+        order = 60,
+        create = function(parent)
+            sharedPage = CreatePage(parent)
+            return sharedPage
+        end,
+        onShow = function(page) page:Refresh() end,
+    })
+end

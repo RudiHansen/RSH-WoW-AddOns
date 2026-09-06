@@ -1,0 +1,14 @@
+## Interface: 120100
+## Title: RSH - Storage
+## Notes: Conservative Warband Nexus gear review for selected characters
+## Author: Rudi
+## Version: 1.0.0
+## OptionalDeps: RSH, WarbandNexus
+## SavedVariables: RSHStorageDB
+
+Core.lua
+WarbandNexusAdapter.lua
+CharacterSettings.lua
+GearReview.lua
+Formatter.lua
+ExportUI.lua
