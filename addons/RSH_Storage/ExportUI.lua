@@ -72,34 +72,85 @@ local function CreateCharacterList(parent)
 
     function border:Refresh()
         local characters = addon:SynchronizeConsideredCharacters()
+        local realms = {}
+        for _, character in ipairs(characters) do
+            if character.realm and character.realm ~= "" then
+                realms[character.realm] = true
+            end
+        end
+        local realmCount = 0
+        for _ in pairs(realms) do realmCount = realmCount + 1 end
+        local showRealms = realmCount > 1
+        local rowHeight = showRealms and 36 or 28
+
         for index, character in ipairs(characters) do
             local row = self.rows[index]
             if not row then
-                row = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
-                row:SetSize(270, 28)
-                row:SetPoint("TOPLEFT", 0, -((index - 1) * 28))
-                row.label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-                row.label:SetPoint("LEFT", row, "RIGHT", -240, 0)
-                row.label:SetPoint("RIGHT", 0, 0)
-                row.label:SetJustifyH("LEFT")
-                row:SetScript("OnClick", function(self)
-                    addon:SetCharacterConsidered(self.characterKey, self:GetChecked())
+                row = CreateFrame("Frame", nil, content)
+                row:SetSize(270, rowHeight)
+
+                row.highlight = row:CreateTexture(nil, "BACKGROUND")
+                row.highlight:SetAllPoints()
+                row.highlight:SetColorTexture(1, 1, 1, 0.06)
+                row.highlight:Hide()
+                row:SetScript("OnEnter", function(self) self.highlight:Show() end)
+                row:SetScript("OnLeave", function(self) self.highlight:Hide() end)
+
+                row.checkbox = CreateFrame(
+                    "CheckButton", nil, row, "UICheckButtonTemplate"
+                )
+                row.checkbox:SetSize(24, 24)
+                row.checkbox:SetPoint("LEFT", 2, 0)
+                row.checkbox:SetScript("OnClick", function(self)
+                    addon:SetCharacterConsidered(
+                        self.characterKey,
+                        self:GetChecked()
+                    )
                 end)
+
+                row.name = row:CreateFontString(
+                    nil, "OVERLAY", "GameFontHighlightSmall"
+                )
+                row.name:SetPoint("LEFT", row.checkbox, "RIGHT", 3, 0)
+                row.name:SetWidth(105)
+                row.name:SetJustifyH("LEFT")
+                row.name:SetWordWrap(false)
+
+                row.class = row:CreateFontString(
+                    nil, "OVERLAY", "GameFontHighlightSmall"
+                )
+                row.class:SetPoint("LEFT", row.name, "RIGHT", 4, 0)
+                row.class:SetWidth(78)
+                row.class:SetJustifyH("LEFT")
+                row.class:SetWordWrap(false)
+
+                row.level = row:CreateFontString(
+                    nil, "OVERLAY", "GameFontHighlightSmall"
+                )
+                row.level:SetPoint("LEFT", row.class, "RIGHT", 4, 0)
+                row.level:SetWidth(55)
+                row.level:SetJustifyH("LEFT")
+                row.level:SetWordWrap(false)
                 self.rows[index] = row
             end
-            row.characterKey = character.key
-            row:SetChecked(addon:IsCharacterConsidered(character.key))
-            local identity = character.name or character.key
-            if character.realm and character.realm ~= "" then
-                identity = identity .. " - " .. character.realm
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", 0, -((index - 1) * rowHeight))
+            row:SetHeight(rowHeight)
+            row.checkbox.characterKey = character.key
+            row.checkbox:SetChecked(addon:IsCharacterConsidered(character.key))
+            local characterName = character.name or character.key
+            if showRealms and character.realm and character.realm ~= "" then
+                characterName = characterName .. "\n" .. character.realm
             end
-            row.label:SetText(identity .. " | "
-                .. addon:SafeText(character.class or character.classFile)
-                .. " | Level " .. addon:SafeText(character.level))
+            row.name:SetText(characterName)
+            row.class:SetText(addon:SafeText(
+                character.class or character.classFile
+            ))
+            row.level:SetText("Level " .. addon:SafeText(character.level))
             row:Show()
         end
         for index = #characters + 1, #self.rows do self.rows[index]:Hide() end
-        content:SetHeight(math.max(1, #characters * 28))
+        content:SetHeight(math.max(1, #characters * rowHeight))
     end
     return border
 end
