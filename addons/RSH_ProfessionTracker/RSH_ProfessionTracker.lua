@@ -1078,7 +1078,9 @@ local function ExportProfessions()
                 .. ". Open each Midnight profession window once, then run "
                 .. "/rshprof export again."
         )
-        return
+        if exportedCount == 0 then
+            return
+        end
     end
 
     if exportedCount == 0 then
